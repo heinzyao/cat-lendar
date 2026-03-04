@@ -14,7 +14,7 @@
 | 部署 | Google Cloud Run (`asia-east1`) |
 | 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | GCP 專案 | `amateur-intelligence-service` |
-| 最新 Revision | `line-calendar-bot-00007-xgt` |
+| 最新 Revision | `line-calendar-bot-00008-zh9` |
 
 ---
 

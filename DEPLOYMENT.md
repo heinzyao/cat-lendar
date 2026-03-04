@@ -430,21 +430,24 @@ oauthlib.oauth2.rfc6749.errors.InvalidGrantError: (invalid_grant) Missing code v
 
 **現象**：點選 LINE 授權連結後，Google 顯示 `redirect_uri_mismatch` 錯誤。
 
-**原因**：`deploy.sh` 使用 `gcloud run services describe --format=value(status.url)` 自動偵測 redirect URI，但有時回傳的 URL 格式（如 `xxxx-de.a.run.app`）與 GCP OAuth 2.0 Credentials 中登記的穩定 URL（`132888979367.asia-east1.run.app`）不符。
+**原因**：`deploy.sh` 舊版使用 `gcloud run services describe --format=value(status.url)` 偵測 redirect URI，該指令回傳全域格式 URL（`*.a.run.app`），與 GCP OAuth 登記的區域格式（`*.<region>.run.app`）不符。
 
-**修復**：手動更新 Cloud Run 環境變數與 GCP Credentials 一致：
+**已根治（`deploy.sh` 已修正）**：腳本改為從 project number 直接計算穩定 URL：
 
 ```bash
-# 確認穩定 URL（從 gcloud run deploy 輸出中取得）
-STABLE_URL="https://line-calendar-bot-132888979367.asia-east1.run.app"
-
-# 更新 Cloud Run 環境變數
-gcloud run services update line-calendar-bot \
-  --region=asia-east1 \
-  --update-env-vars="GOOGLE_REDIRECT_URI=${STABLE_URL}/oauth/callback"
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
 ```
 
-同時確認 **GCP Console → APIs & Services → Credentials → OAuth 2.0 Client ID** 的 Authorized redirect URIs 包含：
+如需手動修復舊版部署：
+
+```bash
+gcloud run services update line-calendar-bot \
+  --region=asia-east1 \
+  --update-env-vars="GOOGLE_REDIRECT_URI=https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback"
+```
+
+確認 **GCP Console → APIs & Services → Credentials → OAuth 2.0 Client ID** 的 Authorized redirect URIs 包含：
 
 ```
 https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
@@ -463,4 +466,4 @@ https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
 | 區域 | `asia-east1` |
 | Service Account | `line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com` |
 | Artifact Registry | `asia-east1-docker.pkg.dev/amateur-intelligence-service/line-bot/line-calendar-bot` |
-| 最新 Revision | `line-calendar-bot-00007-xgt` |
+| 最新 Revision | `line-calendar-bot-00008-zh9` |
