@@ -19,6 +19,7 @@ class OAuthState(BaseModel):
     state_token: str
     line_user_id: str
     expires_at: datetime
+    code_verifier: str | None = None
 
 
 class UserState(BaseModel):

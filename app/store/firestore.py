@@ -123,6 +123,7 @@ async def save_oauth_state(state: OAuthState) -> None:
         .set({
             "line_user_id": state.line_user_id,
             "expires_at": state.expires_at,
+            "code_verifier": state.code_verifier,
         })
     )
 
@@ -143,6 +144,7 @@ async def get_and_delete_oauth_state(state_token: str) -> OAuthState | None:
         state_token=state_token,
         line_user_id=data["line_user_id"],
         expires_at=data["expires_at"],
+        code_verifier=data.get("code_verifier"),
     )
 
 

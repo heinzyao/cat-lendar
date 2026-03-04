@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -15,6 +17,14 @@ from app.store import firestore as store
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+
+def _generate_pkce() -> tuple[str, str]:
+    """產生 PKCE code_verifier 與 code_challenge（S256 method）"""
+    code_verifier = secrets.token_urlsafe(96)
+    digest = hashlib.sha256(code_verifier.encode()).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return code_verifier, code_challenge
 
 
 def _build_flow() -> Flow:
@@ -33,14 +43,16 @@ def _build_flow() -> Flow:
 
 
 async def create_auth_url(line_user_id: str) -> str:
-    """產生 Google OAuth 授權 URL（含 CSRF state）"""
+    """產生 Google OAuth 授權 URL（含 CSRF state 與 PKCE）"""
     state_token = secrets.token_urlsafe(32)
+    code_verifier, code_challenge = _generate_pkce()
 
     oauth_state = OAuthState(
         state_token=state_token,
         line_user_id=line_user_id,
         expires_at=datetime.now(timezone.utc)
         + timedelta(seconds=settings.oauth_state_ttl_seconds),
+        code_verifier=code_verifier,
     )
     await store.save_oauth_state(oauth_state)
 
@@ -49,6 +61,8 @@ async def create_auth_url(line_user_id: str) -> str:
         access_type="offline",
         prompt="consent",
         state=state_token,
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
     )
     return auth_url
 
@@ -63,7 +77,7 @@ async def handle_oauth_callback(
 
     try:
         flow = _build_flow()
-        flow.fetch_token(code=code)
+        flow.fetch_token(code=code, code_verifier=oauth_state.code_verifier)
         credentials: Credentials = flow.credentials
 
         await store.save_user_token(
