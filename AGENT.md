@@ -1,6 +1,7 @@
 # AGENT.md — 多代理協作指引
 
 本文件為 AI Agent 在此專案工作時的指引，包含專案地圖、角色分工與協作規範。
+支援在 **Claude Code**、**OpenCode**、**Antigravity** 之間交接工作。
 
 ---
 
@@ -9,11 +10,9 @@
 | 項目 | 值 |
 |------|-----|
 | 專案 | Cat-Lendar |
-| 語言 | Python 3.12 |
+| 語言 | Python 3.12（Docker）／Python 3.14（本地開發） |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
-| 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
-| GCP 專案 | `amateur-intelligence-service` |
 | 最新 Revision | `line-calendar-bot-00009-6qd` |
 
 ---
@@ -29,12 +28,13 @@ app/
 │   ├── nlp.py             # ★ Claude API 意圖解析（唯一 AI 呼叫點）
 │   ├── auth.py            # ★ Google OAuth + PKCE + token refresh
 │   ├── calendar.py        # Google Calendar CRUD
+│   ├── local_calendar.py  # Firestore 內建行事曆 CRUD
 │   └── line_messaging.py  # LINE reply / push
 ├── models/
 │   ├── intent.py          # CalendarIntent（action, event_details, time_range…）
-│   └── user.py            # UserToken, OAuthState（含 code_verifier）, UserState
+│   └── user.py            # UserToken, OAuthState, UserState
 ├── store/
-│   ├── firestore.py       # Firestore CRUD（users / oauth_states / user_states）
+│   ├── firestore.py       # Firestore CRUD（users / user_prefs / local_events / states）
 │   └── encryption.py      # AES-256-GCM 加解密
 └── utils/
     ├── datetime_utils.py  # 時區、格式化（Asia/Taipei）
@@ -44,109 +44,12 @@ scripts/
 ├── dev.sh                 # 本地開發（uvicorn + ngrok）
 ├── setup_gcp.sh           # 一次性 GCP 基礎建設
 └── update_secret.sh       # 更新 Secret Manager 密鑰
-tests/                     # pytest，30 個測試，asyncio_mode=auto
+tests/                     # pytest，42 個測試，asyncio_mode=auto
 ```
 
 ---
 
-## 已知限制與陷阱
-
-| 問題 | 說明 |
-|------|------|
-| PKCE 必要 | Google 強制要求 PKCE（`code_verifier` / `code_challenge`），`auth.py` 已實作 |
-| redirect_uri 格式 | `deploy.sh` 偵測 URL 可能回傳 `suzmi2nvla-de.a.run.app` 格式，需手動確認與穩定 URL（`132888979367.asia-east1.run.app`）一致 |
-| Python 3.14 警告 | `line-bot-sdk` 使用 Pydantic V1，與 Python 3.14 不相容；Docker image 使用 3.12 無此問題 |
-| OAuth Testing 狀態 | GCP OAuth consent screen 處於 Testing，只有 test users 可授權 |
-| Firestore TTL | `oauth_states` 10 分鐘、`user_states` 5 分鐘自動清除，需在 GCP 設定 TTL policy |
-
----
-
-## 代理角色空間
-
-以下為保留的代理角色定義，可依需求啟用。
-
-### 🔧 Developer Agent
-**職責**：實作新功能、修復 bug
-**工作範圍**：`app/`、`tests/`
-**進入條件**：先閱讀 `handlers/message.py` 與 `services/nlp.py` 了解資料流
-**完成條件**：`uv run pytest tests/ -q` 全部通過，且修改最小化
-
-### 🧪 Test Agent
-**職責**：為新功能補充測試、驗證回歸
-**工作範圍**：`tests/`
-**規範**：
-- 測試不得連線外部服務（Firestore / Claude / LINE）
-- 外部依賴一律 mock（`unittest.mock.AsyncMock`）
-- 使用 `os.environ.setdefault` 設定測試環境變數
-
-### 🚀 Deploy Agent
-**職責**：部署新版本到 Cloud Run
-**指令**：
-```bash
-source ~/Project/.env
-GCP_PROJECT_ID=amateur-intelligence-service bash scripts/deploy.sh
-```
-**部署後確認**：
-1. Health check HTTP 200
-2. Cloud Run 環境變數 `GOOGLE_REDIRECT_URI` 指向穩定 URL（`132888979367.asia-east1.run.app`）
-
-### 📋 Review Agent
-**職責**：審查程式碼品質、安全性
-**重點關注**：
-- `store/encryption.py`：token 加解密正確性
-- `services/auth.py`：PKCE 完整性、state CSRF 防護
-- `routes/webhook.py`：LINE signature 驗證
-
-### 📝 Docs Agent
-**職責**：維護 `README.md`、`DEPLOYMENT.md`、`AGENT.md`
-**每次部署後需更新**：
-- `README.md` 與 `DEPLOYMENT.md` 的「最新 Revision」
-- `DEPLOYMENT.md` 的疑難排解（新增問題與解法）
-
----
-
-## 協作規範
-
-### 修改流程
-
-```
-1. 閱讀相關原始碼（勿假設）
-2. 最小化修改範圍
-3. 執行 uv run pytest tests/ -q → 全部通過
-4. git commit（Conventional Commits 格式）
-5. 部署：bash scripts/deploy.sh
-6. 更新文件
-```
-
-### Commit 格式
-
-```
-<type>: <description>
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-```
-
-| type | 用途 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | Bug 修復 |
-| `test` | 測試新增/修改 |
-| `docs` | 文件更新 |
-| `refactor` | 重構（不改行為） |
-| `chore` | 維護性工作 |
-
-### 環境變數取得
-
-```bash
-# 從 ~/Project/.env 取得 ANTHROPIC_API_KEY、GOOGLE_CLIENT_ID/SECRET
-source ~/Project/.env
-
-# LINE 金鑰（固定值）
-LINE_CHANNEL_SECRET=6888743ac3a18aa116b33872b6e60a1d
-LINE_CHANNEL_ACCESS_TOKEN=UUmKJxC2uix/...（見 Secret Manager）
-```
-
-### Firestore 結構
+## Firestore 結構
 
 ```
 users/{line_user_id}
@@ -165,6 +68,113 @@ oauth_states/{state_token}          ← TTL 10 分鐘
 user_states/{line_user_id}          ← TTL 5 分鐘
   action, candidates, original_intent, expires_at
 ```
+
+### UserState.action 合法值
+
+| action | 情境 |
+|--------|------|
+| `choose_calendar_mode` | 新使用者選擇模式 |
+| `switch_calendar_choice` | 切換行事曆目標選擇 |
+| `confirm_migration` | 確認是否遷移行程 |
+| `pending_local_to_google_migration` | OAuth 完成後執行 L→G 遷移 |
+| `select_event_for_update` | 多筆事件更新選擇 |
+| `select_event_for_delete` | 多筆事件刪除選擇 |
+
+---
+
+## 已知限制與陷阱
+
+| 問題 | 說明 |
+|------|------|
+| PKCE 必要 | Google 強制要求 PKCE，`auth.py` 已實作 |
+| redirect_uri 格式 | `deploy.sh` 從 project number 計算穩定 URL，避免 `*.a.run.app` 格式不符 |
+| Python 3.14 警告 | `line-bot-sdk` 使用 Pydantic V1，Docker image 固定使用 3.12 無此問題 |
+| OAuth Testing 狀態 | GCP OAuth consent screen 處於 Testing，只有 test users 可授權 |
+| Firestore TTL | `oauth_states` 10 分鐘、`user_states` 5 分鐘，需在 GCP 設定 TTL policy |
+
+---
+
+## 代理角色與工具分配
+
+### Claude Code
+**適合工作**：完整功能開發、跨多檔案重構、測試撰寫
+**進入條件**：閱讀 `handlers/message.py`（核心流程）與 `store/firestore.py`（資料結構）
+**完成條件**：`uv run python -m pytest tests/ -q` 全部通過
+
+### OpenCode
+**適合工作**：單一模組修改、Bug 修復、程式碼審查
+**進入條件**：閱讀目標模組及其直接依賴
+**完成條件**：修改最小化，測試通過
+
+### Antigravity
+**適合工作**：探索性分析、文件撰寫、架構建議
+**進入條件**：閱讀本 AGENT.md 與 README.md 取得全貌
+**完成條件**：產出可直接使用的文件或清楚的實作建議
+
+### 共通規則
+- 測試不得連線外部服務（Firestore / Claude / LINE）—— 一律 mock
+- 外部依賴使用 `unittest.mock.AsyncMock`
+- 環境變數使用 `os.environ.setdefault` 注入
+
+---
+
+## 協作交接規範
+
+當一個 agent 需要將工作交給另一個 agent 時，在 commit message 或 PR description 說明：
+
+```
+交接事項：
+- 已完成：<已做的事>
+- 待完成：<下一步要做的事>
+- 注意：<需要特別留意的邊界條件或陷阱>
+```
+
+---
+
+## 修改流程
+
+```
+1. 閱讀相關原始碼（勿假設）
+2. 最小化修改範圍
+3. 執行 uv run python -m pytest tests/ -q → 全部通過
+4. git commit（Conventional Commits 格式）
+5. 部署：source ~/Project/.env && bash scripts/deploy.sh
+6. 更新 AGENT.md 的「最新 Revision」
+```
+
+## Commit 格式
+
+```
+<type>: <description>
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
+| type | 用途 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | Bug 修復 |
+| `test` | 測試新增/修改 |
+| `docs` | 文件更新 |
+| `refactor` | 重構（不改行為） |
+| `chore` | 維護性工作 |
+
+---
+
+## 環境變數
+
+所有密鑰存放於 **GCP Secret Manager**，本地開發從 `~/Project/.env` 讀取。
+**不要在任何文件中記錄密鑰明文。**
+
+| 變數 | 來源 |
+|------|------|
+| `LINE_CHANNEL_SECRET` | Secret Manager |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Secret Manager |
+| `ANTHROPIC_API_KEY` | Secret Manager / `~/Project/.env` |
+| `GOOGLE_CLIENT_ID` | Secret Manager / `~/Project/.env` |
+| `GOOGLE_CLIENT_SECRET` | Secret Manager / `~/Project/.env` |
+| `ENCRYPTION_KEY` | Secret Manager |
+| `GCP_PROJECT_ID` | `deploy.sh` 自動讀取 gcloud config |
 
 ---
 
