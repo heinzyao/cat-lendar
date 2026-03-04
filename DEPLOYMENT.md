@@ -413,6 +413,19 @@ gcloud secrets add-iam-policy-binding <SECRET_NAME> \
 - 隱私政策頁面（需自行架設）
 - 首頁 URL
 
+### 授權失敗：invalid_grant: Missing code verifier
+
+**現象**：OAuth callback 顯示「授權失敗，請稍後再試」，Cloud Run 日誌出現：
+```
+oauthlib.oauth2.rfc6749.errors.InvalidGrantError: (invalid_grant) Missing code verifier.
+```
+
+**原因**：Google 自 2025 年起對 Web Application 類型的 OAuth client 強制要求 PKCE（Proof Key for Code Exchange）。v1.0 程式碼未實作 PKCE。
+
+**已修復（v1.1）**：已在 `create_auth_url` 生成 `code_verifier` / `code_challenge`，存入 Firestore，並在 `fetch_token` 時帶入 `code_verifier`。升級至最新部署版本即可。
+
+---
+
 ### Error 400: redirect_uri_mismatch
 
 **現象**：點選 LINE 授權連結後，Google 顯示 `redirect_uri_mismatch` 錯誤。
@@ -450,4 +463,4 @@ https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
 | 區域 | `asia-east1` |
 | Service Account | `line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com` |
 | Artifact Registry | `asia-east1-docker.pkg.dev/amateur-intelligence-service/line-bot/line-calendar-bot` |
-| 最新 Revision | `line-calendar-bot-00005-d7h` |
+| 最新 Revision | `line-calendar-bot-00006-tb6` |
