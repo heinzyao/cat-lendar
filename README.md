@@ -1,6 +1,6 @@
-# LINE Calendar Bot
+# Cat-Lendar
 
-透過 LINE 訊息以自然語言管理 Google Calendar 的聊天機器人。每位使用者各自授權自己的 Google Calendar，支援多人同時使用。
+透過 LINE 訊息以自然語言管理行事曆的聊天機器人。支援 Google Calendar 或內建行事曆兩種模式，每位使用者獨立設定。
 
 ## 功能
 
@@ -9,6 +9,7 @@
 - **修改行程**：「把明天的開會改到後天」
 - **刪除行程**：「取消週五的晚餐」
 - **多筆模糊匹配**：找到多筆符合事件時列出選單讓使用者選擇
+- **雙模式行事曆**：Google Calendar 或 Firestore 內建行事曆，可隨時切換
 
 ## 系統架構
 
@@ -93,7 +94,7 @@ python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
 ## 專案結構
 
 ```
-line-calendar-bot/
+cat-lendar/
 ├── app/
 │   ├── main.py              # FastAPI 入口，/health 端點
 │   ├── config.py            # pydantic-settings 設定
@@ -103,13 +104,14 @@ line-calendar-bot/
 │   ├── services/
 │   │   ├── nlp.py           # Claude API 意圖解析
 │   │   ├── calendar.py      # Google Calendar CRUD
+│   │   ├── local_calendar.py# Firestore 內建行事曆 CRUD
 │   │   ├── line_messaging.py# LINE 回覆 / 推播
 │   │   └── auth.py          # Google OAuth flow + token refresh
 │   ├── models/
 │   │   ├── intent.py        # CalendarIntent, EventDetails
 │   │   └── user.py          # UserToken, OAuthState, UserState
 │   ├── store/
-│   │   ├── firestore.py     # Firestore CRUD
+│   │   ├── firestore.py     # Firestore CRUD（users/user_prefs/local_events）
 │   │   └── encryption.py    # AES-256-GCM 加解密
 │   ├── handlers/
 │   │   └── message.py       # 訊息處理協調器
@@ -132,8 +134,10 @@ line-calendar-bot/
 ### 首次使用
 
 1. 傳送任何訊息給 LINE Bot
-2. Bot 回傳授權連結 → 點擊，瀏覽器開啟 Google 登入
-3. 完成授權後 Bot 確認成功 → 可開始使用
+2. Bot 詢問行事曆模式：**1 Google Calendar** 或 **2 內建行事曆**
+3. 選 1：點擊授權連結完成 Google 登入
+4. 選 2：直接開始使用（無需第三方帳號）
+5. 之後輸入「切換行事曆」可隨時更換模式
 
 ### 支援的指令範例
 

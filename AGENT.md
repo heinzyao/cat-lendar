@@ -8,7 +8,7 @@
 
 | 項目 | 值 |
 |------|-----|
-| 專案 | LINE Calendar Bot |
+| 專案 | Cat-Lendar |
 | 語言 | Python 3.12 |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
@@ -151,6 +151,13 @@ LINE_CHANNEL_ACCESS_TOKEN=UUmKJxC2uix/...（見 Secret Manager）
 ```
 users/{line_user_id}
   encrypted_access_token, encrypted_refresh_token, token_expiry, scopes
+
+user_prefs/{line_user_id}
+  calendar_mode: "google" | "local", updated_at
+
+local_events/{line_user_id}/events/{event_id}
+  summary, start_time, end_time, location, description, all_day
+  created_at, updated_at
 
 oauth_states/{state_token}          ← TTL 10 分鐘
   line_user_id, expires_at, code_verifier

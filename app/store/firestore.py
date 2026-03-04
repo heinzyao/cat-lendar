@@ -187,3 +187,86 @@ async def get_user_state(line_user_id: str) -> UserState | None:
 
 async def delete_user_state(line_user_id: str) -> None:
     await get_db().collection("user_states").document(line_user_id).delete()
+
+
+# ── User Prefs (行事曆模式選擇) ──
+
+
+async def get_calendar_mode(line_user_id: str) -> str | None:
+    doc = await get_db().collection("user_prefs").document(line_user_id).get()
+    if not doc.exists:
+        return None
+    return doc.to_dict().get("calendar_mode")
+
+
+async def set_calendar_mode(line_user_id: str, mode: str) -> None:
+    now = datetime.now(timezone.utc)
+    await get_db().collection("user_prefs").document(line_user_id).set(
+        {"calendar_mode": mode, "updated_at": now}, merge=True
+    )
+
+
+# ── Local Events (Firestore 內建行事曆) ──
+
+
+def _local_events_col(line_user_id: str):
+    return (
+        get_db()
+        .collection("local_events")
+        .document(line_user_id)
+        .collection("events")
+    )
+
+
+async def create_local_event(line_user_id: str, event_id: str, data: dict) -> None:
+    await _local_events_col(line_user_id).document(event_id).set(data)
+
+
+async def get_local_event(line_user_id: str, event_id: str) -> dict | None:
+    doc = await _local_events_col(line_user_id).document(event_id).get()
+    if not doc.exists:
+        return None
+    return {"id": doc.id, **doc.to_dict()}
+
+
+async def list_local_events(
+    line_user_id: str,
+    time_range=None,
+    keyword: str | None = None,
+) -> list[dict]:
+    col = _local_events_col(line_user_id)
+    if time_range:
+        query = (
+            col.where("start_time", ">=", time_range.start)
+            .where("start_time", "<=", time_range.end)
+            .order_by("start_time")
+        )
+    else:
+        query = col.order_by("start_time")
+    docs = await query.get()
+    events = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+    if keyword:
+        kw = keyword.lower()
+        events = [
+            e for e in events
+            if kw in (e.get("summary") or "").lower()
+            or kw in (e.get("description") or "").lower()
+        ]
+    return events
+
+
+async def update_local_event(
+    line_user_id: str, event_id: str, updates: dict
+) -> None:
+    updates["updated_at"] = datetime.now(timezone.utc)
+    await _local_events_col(line_user_id).document(event_id).update(updates)
+
+
+async def delete_local_event(line_user_id: str, event_id: str) -> None:
+    await _local_events_col(line_user_id).document(event_id).delete()
+
+
+async def delete_all_local_events(line_user_id: str) -> None:
+    docs = await _local_events_col(line_user_id).get()
+    for doc in docs:
+        await doc.reference.delete()

@@ -37,6 +37,22 @@ async def oauth_callback(
     # OAuth callback 時 reply_token 已過期，用 push message 通知
     await push_text(line_user_id, i18n.AUTH_SUCCESS)
 
+    # 若有待執行的 Local→Google 遷移，在授權後立即執行
+    from app.store import firestore as store
+    from app.services import auth as auth_service
+    from app.handlers.message import execute_local_to_google_migration
+
+    user_state = await store.get_user_state(line_user_id)
+    if user_state and user_state.action == "pending_local_to_google_migration":
+        await store.delete_user_state(line_user_id)
+        credentials = await auth_service.get_valid_credentials(line_user_id)
+        if credentials:
+            try:
+                count = await execute_local_to_google_migration(line_user_id, credentials)
+                await push_text(line_user_id, i18n.MIGRATION_SUCCESS.format(count=count))
+            except Exception:
+                logger.exception("Post-auth migration failed for %s", line_user_id)
+
     return HTMLResponse(
         content=_html_page("授權成功", "Google 日曆授權成功！你可以關閉此頁面，回到 LINE 使用。"),
     )

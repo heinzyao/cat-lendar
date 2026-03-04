@@ -46,29 +46,37 @@ async def push_text(user_id: str, text: str) -> None:
     )
 
 
-async def reply_auth_button(reply_token: str, auth_url: str) -> None:
-    """傳送授權按鈕，使用 openExternalBrowser=1 強制外部瀏覽器"""
-    # 在 URL 加上 openExternalBrowser=1 讓 LINE 用外部瀏覽器開啟
+def _auth_button_message(auth_url: str, text: str) -> TemplateMessage:
     separator = "&" if "?" in auth_url else "?"
     external_url = f"{auth_url}{separator}openExternalBrowser=1"
+    return TemplateMessage(
+        alt_text=text,
+        template=ButtonsTemplate(
+            text=text,
+            actions=[URIAction(label=i18n.AUTH_BUTTON_LABEL, uri=external_url)],
+        ),
+    )
 
+
+async def reply_auth_button(
+    reply_token: str, auth_url: str, text: str = i18n.AUTH_REQUIRED
+) -> None:
+    """傳送授權按鈕（reply），使用 openExternalBrowser=1 強制外部瀏覽器"""
     api = _get_api()
     api.reply_message(
         ReplyMessageRequest(
             reply_token=reply_token,
-            messages=[
-                TemplateMessage(
-                    alt_text=i18n.AUTH_REQUIRED,
-                    template=ButtonsTemplate(
-                        text=i18n.AUTH_REQUIRED,
-                        actions=[
-                            URIAction(
-                                label=i18n.AUTH_BUTTON_LABEL,
-                                uri=external_url,
-                            )
-                        ],
-                    ),
-                )
-            ],
+            messages=[_auth_button_message(auth_url, text)],
+        )
+    )
+
+
+async def push_auth_button(user_id: str, auth_url: str, text: str = i18n.AUTH_REQUIRED) -> None:
+    """透過 push message 傳送授權按鈕（reply_token 已用盡時使用）"""
+    api = _get_api()
+    api.push_message(
+        PushMessageRequest(
+            to=user_id,
+            messages=[_auth_button_message(auth_url, text)],
         )
     )

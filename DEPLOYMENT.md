@@ -1,4 +1,4 @@
-# LINE Calendar Bot — 部署與設定指南
+# Cat-Lendar — 部署與設定指南
 
 ## 目錄
 
