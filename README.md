@@ -175,6 +175,15 @@ line-calendar-bot/
 uv run pytest tests/ -v
 ```
 
+共 30 個測試，涵蓋：
+
+| 測試檔案 | 涵蓋範圍 |
+|---------|---------|
+| `tests/test_encryption.py` | AES-256-GCM 加解密、nonce 隨機性、錯誤金鑰拒絕 |
+| `tests/test_datetime_utils.py` | RFC3339 格式、時區轉換、事件時間格式化、星期名稱 |
+| `tests/test_models.py` | CalendarIntent 驗證、ActionType、confidence 邊界 |
+| `tests/test_api.py` | /health、webhook 簽名驗證、/oauth/callback 路由 |
+
 ### 更新密鑰
 
 ```bash
@@ -190,6 +199,7 @@ bash scripts/update_secret.sh
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | OAuth Callback | `https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback` |
 | 區域 | `asia-east1` |
+| 最新 Revision | `line-calendar-bot-00005-d7h` |
 
 ## License
 

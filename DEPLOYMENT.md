@@ -412,3 +412,42 @@ gcloud secrets add-iam-policy-binding <SECRET_NAME> \
 - 應用程式確實需要 Calendar 存取權限
 - 隱私政策頁面（需自行架設）
 - 首頁 URL
+
+### Error 400: redirect_uri_mismatch
+
+**現象**：點選 LINE 授權連結後，Google 顯示 `redirect_uri_mismatch` 錯誤。
+
+**原因**：`deploy.sh` 使用 `gcloud run services describe --format=value(status.url)` 自動偵測 redirect URI，但有時回傳的 URL 格式（如 `xxxx-de.a.run.app`）與 GCP OAuth 2.0 Credentials 中登記的穩定 URL（`132888979367.asia-east1.run.app`）不符。
+
+**修復**：手動更新 Cloud Run 環境變數與 GCP Credentials 一致：
+
+```bash
+# 確認穩定 URL（從 gcloud run deploy 輸出中取得）
+STABLE_URL="https://line-calendar-bot-132888979367.asia-east1.run.app"
+
+# 更新 Cloud Run 環境變數
+gcloud run services update line-calendar-bot \
+  --region=asia-east1 \
+  --update-env-vars="GOOGLE_REDIRECT_URI=${STABLE_URL}/oauth/callback"
+```
+
+同時確認 **GCP Console → APIs & Services → Credentials → OAuth 2.0 Client ID** 的 Authorized redirect URIs 包含：
+
+```
+https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
+```
+
+---
+
+## 已部署環境
+
+| 項目 | 值 |
+|------|-----|
+| GCP 專案 | `amateur-intelligence-service` |
+| 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
+| Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
+| OAuth Callback | `https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback` |
+| 區域 | `asia-east1` |
+| Service Account | `line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com` |
+| Artifact Registry | `asia-east1-docker.pkg.dev/amateur-intelligence-service/line-bot/line-calendar-bot` |
+| 最新 Revision | `line-calendar-bot-00005-d7h` |
