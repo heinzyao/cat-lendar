@@ -463,4 +463,4 @@ https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
 | 區域 | `asia-east1` |
 | Service Account | `line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com` |
 | Artifact Registry | `asia-east1-docker.pkg.dev/amateur-intelligence-service/line-bot/line-calendar-bot` |
-| 最新 Revision | `line-calendar-bot-00006-tb6` |
+| 最新 Revision | `line-calendar-bot-00007-xgt` |

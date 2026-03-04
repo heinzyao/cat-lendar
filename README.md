@@ -199,7 +199,7 @@ bash scripts/update_secret.sh
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | OAuth Callback | `https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback` |
 | 區域 | `asia-east1` |
-| 最新 Revision | `line-calendar-bot-00006-tb6` |
+| 最新 Revision | `line-calendar-bot-00007-xgt` |
 
 ## License
 
