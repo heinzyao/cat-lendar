@@ -393,14 +393,16 @@ async def _handle_update(
         return
 
     if len(events) == 1:
+        update_details = None
+        if intent.original_message:
+            update_details = await nlp.parse_update_details(
+                intent.original_message, events[0]
+            )
+        details_to_use = update_details or intent.event_details
         if calendar_mode == "google":
-            updated = await calendar.update_event(
-                credentials, events[0]["id"], intent.event_details
-            )
+            updated = await calendar.update_event(credentials, events[0]["id"], details_to_use)
         else:
-            updated = await local_calendar.update_event(
-                user_id, events[0]["id"], intent.event_details
-            )
+            updated = await local_calendar.update_event(user_id, events[0]["id"], details_to_use)
         time_str = _get_event_time_str(updated)
         msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
         await line_messaging.reply_text(reply_token, msg)
@@ -464,14 +466,16 @@ async def _handle_selection(
     try:
         if user_state.action == "select_event_for_update":
             intent = CalendarIntent.model_validate(user_state.original_intent)
+            update_details = None
+            if intent.original_message:
+                update_details = await nlp.parse_update_details(
+                    intent.original_message, selected
+                )
+            details_to_use = update_details or intent.event_details
             if calendar_mode == "google":
-                updated = await calendar.update_event(
-                    credentials, selected["id"], intent.event_details
-                )
+                updated = await calendar.update_event(credentials, selected["id"], details_to_use)
             else:
-                updated = await local_calendar.update_event(
-                    user_id, selected["id"], intent.event_details
-                )
+                updated = await local_calendar.update_event(user_id, selected["id"], details_to_use)
             time_str = _get_event_time_str(updated)
             msg = i18n.EVENT_UPDATED.format(
                 summary=updated.get("summary", ""), time=time_str
@@ -584,7 +588,14 @@ async def _save_selection_state(
         line_user_id=user_id,
         action=action,
         candidates=[
-            {"id": e["id"], "summary": e.get("summary", ""), "start": e.get("start", {})}
+            {
+                "id": e["id"],
+                "summary": e.get("summary", ""),
+                "start": e.get("start", {}),
+                "end": e.get("end", {}),
+                "location": e.get("location"),
+                "description": e.get("description"),
+            }
             for e in events
         ],
         original_intent=intent.model_dump(mode="json"),

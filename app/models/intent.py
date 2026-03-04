@@ -39,3 +39,4 @@ class CalendarIntent(BaseModel):
     clarification_needed: str | None = Field(
         default=None, description="需要使用者澄清時的提示訊息"
     )
+    original_message: str | None = None  # 供 update 二次解析用

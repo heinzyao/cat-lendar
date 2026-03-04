@@ -6,7 +6,7 @@ import logging
 import anthropic
 
 from app.config import settings
-from app.models.intent import CalendarIntent
+from app.models.intent import CalendarIntent, EventDetails
 from app.utils.datetime_utils import now_local, weekday_name
 
 logger = logging.getLogger(__name__)
@@ -85,4 +85,111 @@ async def parse_intent(user_message: str) -> CalendarIntent:
             clarification_needed="無法解析指令",
         )
 
-    return CalendarIntent.model_validate(data)
+    intent = CalendarIntent.model_validate(data)
+    return intent.model_copy(update={"original_message": user_message})
+
+
+def _format_event_for_prompt(event: dict) -> str:
+    """將 Calendar 格式的 event 轉成 prompt 可讀文字"""
+    from datetime import datetime
+
+    from app.utils.datetime_utils import local_tz
+
+    tz = local_tz()
+    summary = event.get("summary", "(無標題)")
+
+    start_raw = event.get("start", {})
+    end_raw = event.get("end", {})
+    start_str = start_raw.get("dateTime", start_raw.get("date", ""))
+    end_str = end_raw.get("dateTime", end_raw.get("date", ""))
+
+    try:
+        start_dt = datetime.fromisoformat(start_str).astimezone(tz)
+        end_dt = datetime.fromisoformat(end_str).astimezone(tz)
+        duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+        start_fmt = start_dt.strftime("%Y-%m-%d %H:%M")
+        end_fmt = end_dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        start_fmt = start_str
+        end_fmt = end_str
+        duration_minutes = 0
+
+    lines = [
+        f"名稱：{summary}",
+        f"開始：{start_fmt}",
+        f"結束：{end_fmt}",
+        f"持續：{duration_minutes} 分鐘",
+    ]
+    if event.get("location"):
+        lines.append(f"地點：{event['location']}")
+    if event.get("description"):
+        lines.append(f"描述：{event['description']}")
+    return "\n".join(lines)
+
+
+async def parse_update_details(
+    user_message: str, original_event: dict
+) -> EventDetails | None:
+    """第二階段解析：結合原事件資訊，精確計算需更新的欄位"""
+    if not user_message:
+        return None
+
+    client = _get_client()
+    now = now_local()
+    event_info = _format_event_for_prompt(original_event)
+
+    system_prompt = f"""你是一個日曆助手，負責解析使用者想如何修改一個已知的行程。
+
+目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
+時區：{settings.timezone}
+
+原始行程：
+{event_info}
+
+請根據使用者的指令，只輸出需要更新的欄位（JSON 格式），不變的欄位省略：
+{{
+  "summary": "新名稱（可選）",
+  "start_time": "ISO8601 datetime（可選）",
+  "end_time": "ISO8601 datetime（可選）",
+  "location": "地點（可選）",
+  "description": "描述（可選）",
+  "all_day": false
+}}
+
+修改規則：
+1. 「改到明天/後天/週五」→ 保持原持續時間，只移動日期，時間不變
+2. 「改到下午 N 點 / N:00」→ 開始改為 N:00，結束 = 開始 + 原持續時間
+3. 「延後/提前 N 小時/分鐘」→ 開始和結束各平移相同時間
+4. 「改成 N 小時/分鐘」→ 結束 = 原開始 + N 小時/分鐘（開始不變）
+5. 若只改名稱/地點/描述，時間欄位省略
+6. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。"""
+
+    try:
+        response = await client.messages.create(
+            model=settings.claude_model,
+            max_tokens=512,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except Exception:
+        logger.warning("parse_update_details API call failed", exc_info=True)
+        return None
+
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1]
+        if raw.endswith("```"):
+            raw = raw[: raw.rfind("```")]
+        raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("parse_update_details 回傳非 JSON: %s", raw)
+        return None
+
+    try:
+        return EventDetails.model_validate(data)
+    except Exception:
+        logger.warning("parse_update_details EventDetails 驗證失敗: %s", data)
+        return None
