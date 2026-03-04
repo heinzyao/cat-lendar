@@ -13,7 +13,7 @@
 | 語言 | Python 3.12（Docker）／Python 3.14（本地開發） |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
-| 最新 Revision | `line-calendar-bot-00009-6qd` |
+| 最新 Revision | `line-calendar-bot-00010-wqp` |
 
 ---
 
@@ -25,13 +25,13 @@ app/
 ├── main.py                # FastAPI 入口，路由掛載
 ├── handlers/message.py    # ★ 核心協調器：接收訊息 → NLP → 執行
 ├── services/
-│   ├── nlp.py             # ★ Claude API 意圖解析（唯一 AI 呼叫點）
+│   ├── nlp.py             # ★ Claude API 意圖解析（parse_intent + parse_update_details 二次解析）
 │   ├── auth.py            # ★ Google OAuth + PKCE + token refresh
 │   ├── calendar.py        # Google Calendar CRUD
 │   ├── local_calendar.py  # Firestore 內建行事曆 CRUD
 │   └── line_messaging.py  # LINE reply / push
 ├── models/
-│   ├── intent.py          # CalendarIntent（action, event_details, time_range…）
+│   ├── intent.py          # CalendarIntent（action, event_details, time_range, original_message…）
 │   └── user.py            # UserToken, OAuthState, UserState
 ├── store/
 │   ├── firestore.py       # Firestore CRUD（users / user_prefs / local_events / states）
@@ -44,7 +44,7 @@ scripts/
 ├── dev.sh                 # 本地開發（uvicorn + ngrok）
 ├── setup_gcp.sh           # 一次性 GCP 基礎建設
 └── update_secret.sh       # 更新 Secret Manager 密鑰
-tests/                     # pytest，42 個測試，asyncio_mode=auto
+tests/                     # pytest，51 個測試，asyncio_mode=auto
 ```
 
 ---
@@ -175,6 +175,16 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 | `GOOGLE_CLIENT_SECRET` | Secret Manager / `~/Project/.env` |
 | `ENCRYPTION_KEY` | Secret Manager |
 | `GCP_PROJECT_ID` | `deploy.sh` 自動讀取 gcloud config |
+
+---
+
+## 已完成功能
+
+- [x] Google Calendar 整合（OAuth + PKCE）
+- [x] Firestore 內建行事曆（local mode）
+- [x] 行事曆雙模式切換與資料遷移
+- [x] 多筆事件選擇流程（update / delete）
+- [x] NLP 二次解析（parse_update_details）：相對時間更新保持持續時間
 
 ---
 
