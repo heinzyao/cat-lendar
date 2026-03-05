@@ -46,10 +46,10 @@ command -v docker >/dev/null 2>&1 || error "請先安裝 Docker"
 
 gcloud config set project "$PROJECT_ID" --quiet
 
-# 確認 GOOGLE_REFRESH_TOKEN secret 已建立
-if ! gcloud secrets describe GOOGLE_REFRESH_TOKEN --project="$PROJECT_ID" --quiet >/dev/null 2>&1; then
-  error "GOOGLE_REFRESH_TOKEN secret 不存在！請先執行 scripts/get_token.py 取得 refresh token，再建立 secret：\n  echo 'YOUR_TOKEN' | gcloud secrets create GOOGLE_REFRESH_TOKEN --data-file=- --project=$PROJECT_ID"
-fi
+# 從 project number 計算穩定的 Cloud Run URL（區域格式）
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" --quiet)
+STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
+info "Stable URL: $STABLE_SERVICE_URL"
 
 # ── Docker 認證 ───────────────────────────────────────────────────────────────
 step "設定 Artifact Registry 認證"
@@ -94,7 +94,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --set-secrets="$SET_SECRETS" \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_CALENDAR_ID=primary" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID}" \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=10 \
@@ -108,8 +108,6 @@ success "部署完成"
 
 # ── 健康檢查 ─────────────────────────────────────────────────────────────────
 step "健康檢查"
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" --quiet)
-STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
 sleep 3
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STABLE_SERVICE_URL}/health" || echo "000")
 if [[ "$HTTP_STATUS" == "200" ]]; then
