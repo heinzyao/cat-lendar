@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Taipei"
     oauth_state_ttl_seconds: int = 600  # 10 minutes
     user_state_ttl_seconds: int = 300  # 5 minutes
+    conversation_history_ttl_seconds: int = 1800  # 30 minutes
+    max_conversation_turns: int = 10
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

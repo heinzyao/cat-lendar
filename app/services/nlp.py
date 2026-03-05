@@ -7,6 +7,7 @@ import anthropic
 
 from app.config import settings
 from app.models.intent import CalendarIntent, EventDetails
+from app.models.user import ConversationMessage
 from app.utils.datetime_utils import now_local, weekday_name
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,11 @@ def _get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(has_history: bool = False) -> str:
     now = now_local()
+    history_note = ""
+    if has_history:
+        history_note = "\n\n注意：對話歷史已提供在先前的 messages 中。請參考對話上下文來理解代名詞（如「它」「那個」）、省略（如「改到明天」指的是前面提到的行程）、以及後續補充資訊（如追加地點、修改時間）。"
     return f"""你是一個 Google 日曆助手，負責解析使用者的自然語言指令並轉換為結構化操作。
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
@@ -54,17 +58,27 @@ def _build_system_prompt() -> str:
 3. update: search_keyword 或 time_range 用來找到要修改的行程，event_details 放新的值。
 4. delete: search_keyword 或 time_range 用來找到要刪除的行程。
 5. 若資訊不足以執行操作，設 confidence < 0.5 並在 clarification_needed 說明。
-6. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。"""
+6. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。{history_note}"""
 
 
-async def parse_intent(user_message: str) -> CalendarIntent:
+async def parse_intent(
+    user_message: str,
+    conversation_history: list[ConversationMessage] | None = None,
+) -> CalendarIntent:
     client = _get_client()
+
+    # 組裝 multi-turn messages
+    messages: list[dict[str, str]] = []
+    if conversation_history:
+        for msg in conversation_history:
+            messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": user_message})
 
     response = await client.messages.create(
         model=settings.claude_model,
         max_tokens=1024,
-        system=_build_system_prompt(),
-        messages=[{"role": "user", "content": user_message}],
+        system=_build_system_prompt(has_history=bool(conversation_history)),
+        messages=messages,
     )
 
     raw = response.content[0].text.strip()

@@ -83,9 +83,12 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         )
         return
 
+    # 讀取對話記憶
+    conversation_history = await store.get_conversation_history(user_id)
+
     # Claude 解析意圖
     try:
-        intent = await nlp.parse_intent(text)
+        intent = await nlp.parse_intent(text, conversation_history)
     except Exception:
         logger.exception("NLP parse failed")
         await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
@@ -93,12 +96,16 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
 
     if intent.confidence < 0.5 or intent.clarification_needed:
         msg = intent.clarification_needed or i18n.PARSE_ERROR
-        await line_messaging.reply_text(
-            reply_token, i18n.CLARIFICATION_NEEDED.format(message=msg)
-        )
+        reply_msg = i18n.CLARIFICATION_NEEDED.format(message=msg)
+        await line_messaging.reply_text(reply_token, reply_msg)
+        await store.append_conversation_turn(user_id, text, reply_msg)
         return
 
     await _execute_intent(user_id, reply_token, intent, credentials, calendar_mode)
+
+    # 儲存對話記憶（簡要記錄執行結果）
+    reply_summary = _summarize_intent_result(intent)
+    await store.append_conversation_turn(user_id, text, reply_summary)
 
 
 # ── Calendar mode selection ──
@@ -628,3 +635,20 @@ def _get_event_time_str(event: dict) -> str:
         start.get("dateTime", start.get("date", "")),
         end.get("dateTime", end.get("date", "")),
     )
+
+
+def _summarize_intent_result(intent: CalendarIntent) -> str:
+    """將意圖執行結果摘要為簡要文字，作為對話記憶中的 assistant 回應。"""
+    action = intent.action
+    if action == ActionType.CREATE:
+        summary = intent.event_details.summary if intent.event_details else "行程"
+        return f"已建立行程：{summary}"
+    elif action == ActionType.QUERY:
+        return "已查詢行程"
+    elif action == ActionType.UPDATE:
+        keyword = intent.search_keyword or "行程"
+        return f"已更新行程：{keyword}"
+    elif action == ActionType.DELETE:
+        keyword = intent.search_keyword or "行程"
+        return f"已刪除行程：{keyword}"
+    return "已處理"

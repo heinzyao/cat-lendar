@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.cloud.firestore import AsyncClient, AsyncTransaction
 
 from app.config import settings
-from app.models.user import OAuthState, UserState, UserToken
+from app.models.user import ConversationMessage, OAuthState, UserState, UserToken
 from app.store.encryption import decrypt, encrypt
 
 logger = logging.getLogger(__name__)
@@ -270,3 +270,69 @@ async def delete_all_local_events(line_user_id: str) -> None:
     docs = await _local_events_col(line_user_id).get()
     for doc in docs:
         await doc.reference.delete()
+
+
+# ── Conversation History (對話記憶) ──
+
+
+async def get_conversation_history(
+    line_user_id: str,
+) -> list[ConversationMessage]:
+    """取得使用者近期對話記憶，若已過期則清除並回傳空列表。"""
+    doc_ref = get_db().collection("conversation_history").document(line_user_id)
+    doc = await doc_ref.get()
+    if not doc.exists:
+        return []
+
+    data = doc.to_dict()
+    updated_at = data.get("updated_at")
+    if updated_at is not None:
+        if updated_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) - timedelta(seconds=settings.conversation_history_ttl_seconds):
+            await doc_ref.delete()
+            return []
+
+    messages_raw = data.get("messages", [])
+    return [
+        ConversationMessage(
+            role=m["role"],
+            content=m["content"],
+            timestamp=m["timestamp"],
+        )
+        for m in messages_raw
+    ]
+
+
+async def append_conversation_turn(
+    line_user_id: str,
+    user_message: str,
+    assistant_message: str,
+) -> None:
+    """新增一輪對話（user + assistant），超過 max_turns 則裁剪最舊的。"""
+    now = datetime.now(timezone.utc)
+    doc_ref = get_db().collection("conversation_history").document(line_user_id)
+    doc = await doc_ref.get()
+
+    messages: list[dict] = []
+    if doc.exists:
+        data = doc.to_dict()
+        updated_at = data.get("updated_at")
+        # 若已過期，從空白開始
+        if updated_at is not None:
+            if updated_at.replace(tzinfo=timezone.utc) >= datetime.now(timezone.utc) - timedelta(seconds=settings.conversation_history_ttl_seconds):
+                messages = data.get("messages", [])
+
+    # 新增本輪對話
+    messages.append({"role": "user", "content": user_message, "timestamp": now})
+    messages.append({"role": "assistant", "content": assistant_message, "timestamp": now})
+
+    # 裁剪：每輪 2 則，max_turns 輪 = max_turns * 2 則
+    max_messages = settings.max_conversation_turns * 2
+    if len(messages) > max_messages:
+        messages = messages[-max_messages:]
+
+    await doc_ref.set({"messages": messages, "updated_at": now})
+
+
+async def clear_conversation_history(line_user_id: str) -> None:
+    """清除使用者的對話記憶。"""
+    await get_db().collection("conversation_history").document(line_user_id).delete()

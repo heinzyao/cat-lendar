@@ -69,6 +69,10 @@ user_states/{line_user_id}          ← TTL 5 分鐘
   action, candidates, original_intent, expires_at
 ```
 
+conversation_history/{line_user_id}   ← TTL 30 分鐘
+  messages: [{role, content, timestamp}, ...]
+  updated_at
+
 ### UserState.action 合法值
 
 | action | 情境 |
@@ -185,6 +189,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 - [x] 行事曆雙模式切換與資料遷移
 - [x] 多筆事件選擇流程（update / delete）
 - [x] NLP 二次解析（parse_update_details）：相對時間更新保持持續時間
+- [x] 對話記憶（conversation memory）：多輪對話上下文理解，支援代名詞、省略、補充資訊
 
 ---
 
