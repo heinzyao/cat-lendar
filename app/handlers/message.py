@@ -78,9 +78,11 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         "select_event_for_update",
         "select_event_for_delete",
     ):
-        await _handle_selection(
+        reply_msg = await _handle_selection(
             user_id, reply_token, text, user_state, credentials, calendar_mode
         )
+        if reply_msg:
+            await store.append_conversation_turn(user_id, text, reply_msg)
         return
 
     # 讀取對話記憶
@@ -101,11 +103,8 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await store.append_conversation_turn(user_id, text, reply_msg)
         return
 
-    await _execute_intent(user_id, reply_token, intent, credentials, calendar_mode)
-
-    # 儲存對話記憶（簡要記錄執行結果）
-    reply_summary = _summarize_intent_result(intent)
-    await store.append_conversation_turn(user_id, text, reply_summary)
+    reply_msg = await _execute_intent(user_id, reply_token, intent, credentials, calendar_mode)
+    await store.append_conversation_turn(user_id, text, reply_msg)
 
 
 # ── Calendar mode selection ──
@@ -315,21 +314,23 @@ async def _execute_intent(
     intent: CalendarIntent,
     credentials,
     calendar_mode: str,
-) -> None:
+) -> str:
     try:
         if intent.action == ActionType.CREATE:
-            await _handle_create(reply_token, intent, credentials, user_id, calendar_mode)
+            return await _handle_create(reply_token, intent, credentials, user_id, calendar_mode)
         elif intent.action == ActionType.QUERY:
-            await _handle_query(reply_token, intent, credentials, user_id, calendar_mode)
+            return await _handle_query(reply_token, intent, credentials, user_id, calendar_mode)
         elif intent.action == ActionType.UPDATE:
-            await _handle_update(user_id, reply_token, intent, credentials, calendar_mode)
+            return await _handle_update(user_id, reply_token, intent, credentials, calendar_mode)
         elif intent.action == ActionType.DELETE:
-            await _handle_delete(user_id, reply_token, intent, credentials, calendar_mode)
+            return await _handle_delete(user_id, reply_token, intent, credentials, calendar_mode)
         else:
             await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
+            return i18n.PARSE_ERROR
     except Exception:
         logger.exception("Calendar operation failed")
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
+        return i18n.CALENDAR_ERROR
 
 
 async def _handle_create(
@@ -338,7 +339,7 @@ async def _handle_create(
     credentials,
     user_id: str,
     calendar_mode: str,
-) -> None:
+) -> str:
     details = intent.event_details
     if calendar_mode == "google":
         event = await calendar.create_event(credentials, details)
@@ -353,6 +354,7 @@ async def _handle_create(
     else:
         msg = i18n.EVENT_CREATED.format(summary=event.get("summary", ""), time=time_str)
     await line_messaging.reply_text(reply_token, msg)
+    return msg
 
 
 async def _handle_query(
@@ -361,7 +363,7 @@ async def _handle_query(
     credentials,
     user_id: str,
     calendar_mode: str,
-) -> None:
+) -> str:
     if calendar_mode == "google":
         events = await calendar.query_events(
             credentials, intent.time_range, keyword=intent.search_keyword
@@ -373,7 +375,7 @@ async def _handle_query(
 
     if not events:
         await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return
+        return i18n.NO_EVENTS_FOUND
 
     lines = [i18n.EVENTS_LIST_HEADER]
     for idx, event in enumerate(events, 1):
@@ -384,7 +386,9 @@ async def _handle_query(
                 time=_get_event_time_str(event),
             )
         )
-    await line_messaging.reply_text(reply_token, "".join(lines).strip())
+    msg = "".join(lines).strip()
+    await line_messaging.reply_text(reply_token, msg)
+    return msg
 
 
 async def _handle_update(
@@ -393,11 +397,11 @@ async def _handle_update(
     intent: CalendarIntent,
     credentials,
     calendar_mode: str,
-) -> None:
+) -> str:
     events = await _find_matching_events(intent, credentials, user_id, calendar_mode)
     if not events:
         await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return
+        return i18n.NO_EVENTS_FOUND
 
     if len(events) == 1:
         update_details = None
@@ -413,9 +417,10 @@ async def _handle_update(
         time_str = _get_event_time_str(updated)
         msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
         await line_messaging.reply_text(reply_token, msg)
+        return msg
     else:
         await _save_selection_state(user_id, "select_event_for_update", events, intent)
-        await _reply_selection(reply_token, events)
+        return await _reply_selection(reply_token, events)
 
 
 async def _handle_delete(
@@ -424,11 +429,11 @@ async def _handle_delete(
     intent: CalendarIntent,
     credentials,
     calendar_mode: str,
-) -> None:
+) -> str:
     events = await _find_matching_events(intent, credentials, user_id, calendar_mode)
     if not events:
         await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return
+        return i18n.NO_EVENTS_FOUND
 
     if len(events) == 1:
         summary = events[0].get("summary", "(無標題)")
@@ -436,12 +441,12 @@ async def _handle_delete(
             await calendar.delete_event(credentials, events[0]["id"])
         else:
             await local_calendar.delete_event(user_id, events[0]["id"])
-        await line_messaging.reply_text(
-            reply_token, i18n.EVENT_DELETED.format(summary=summary)
-        )
+        msg = i18n.EVENT_DELETED.format(summary=summary)
+        await line_messaging.reply_text(reply_token, msg)
+        return msg
     else:
         await _save_selection_state(user_id, "select_event_for_delete", events, intent)
-        await _reply_selection(reply_token, events)
+        return await _reply_selection(reply_token, events)
 
 
 async def _handle_selection(
@@ -451,21 +456,21 @@ async def _handle_selection(
     user_state: UserState,
     credentials,
     calendar_mode: str,
-) -> None:
-    """處理使用者的編號選擇"""
+) -> str | None:
+    """處理使用者的編號選擇，回傳實際發送的訊息字串"""
     try:
         choice = int(text)
     except ValueError:
         await store.delete_user_state(user_id)
         await handle_message(user_id, reply_token, text)
-        return
+        return None  # 遞迴呼叫會自行儲存對話記憶
 
     candidates = user_state.candidates
     if choice < 1 or choice > len(candidates):
         await line_messaging.reply_text(
             reply_token, f"請輸入 1~{len(candidates)} 的數字。"
         )
-        return
+        return None  # 狀態保留，等待正確輸入
 
     selected = candidates[choice - 1]
     await store.delete_user_state(user_id)
@@ -488,6 +493,7 @@ async def _handle_selection(
                 summary=updated.get("summary", ""), time=time_str
             )
             await line_messaging.reply_text(reply_token, msg)
+            return msg
 
         elif user_state.action == "select_event_for_delete":
             summary = selected.get("summary", "(無標題)")
@@ -495,12 +501,14 @@ async def _handle_selection(
                 await calendar.delete_event(credentials, selected["id"])
             else:
                 await local_calendar.delete_event(user_id, selected["id"])
-            await line_messaging.reply_text(
-                reply_token, i18n.EVENT_DELETED.format(summary=summary)
-            )
+            msg = i18n.EVENT_DELETED.format(summary=summary)
+            await line_messaging.reply_text(reply_token, msg)
+            return msg
     except Exception:
         logger.exception("Selection action failed")
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
+        return i18n.CALENDAR_ERROR
+    return None
 
 
 # ── Auto-process (local mode 選定後自動處理原始訊息) ──
@@ -612,7 +620,7 @@ async def _save_selection_state(
     await store.save_user_state(state)
 
 
-async def _reply_selection(reply_token: str, events: list[dict]) -> None:
+async def _reply_selection(reply_token: str, events: list[dict]) -> str:
     lines = [i18n.MULTIPLE_EVENTS_FOUND]
     for idx, event in enumerate(events, 1):
         lines.append(
@@ -623,7 +631,9 @@ async def _reply_selection(reply_token: str, events: list[dict]) -> None:
             )
         )
     lines.append(i18n.SELECT_PROMPT)
-    await line_messaging.reply_text(reply_token, "".join(lines).strip())
+    msg = "".join(lines).strip()
+    await line_messaging.reply_text(reply_token, msg)
+    return msg
 
 
 def _get_event_time_str(event: dict) -> str:
@@ -637,18 +647,3 @@ def _get_event_time_str(event: dict) -> str:
     )
 
 
-def _summarize_intent_result(intent: CalendarIntent) -> str:
-    """將意圖執行結果摘要為簡要文字，作為對話記憶中的 assistant 回應。"""
-    action = intent.action
-    if action == ActionType.CREATE:
-        summary = intent.event_details.summary if intent.event_details else "行程"
-        return f"已建立行程：{summary}"
-    elif action == ActionType.QUERY:
-        return "已查詢行程"
-    elif action == ActionType.UPDATE:
-        keyword = intent.search_keyword or "行程"
-        return f"已更新行程：{keyword}"
-    elif action == ActionType.DELETE:
-        keyword = intent.search_keyword or "行程"
-        return f"已刪除行程：{keyword}"
-    return "已處理"
