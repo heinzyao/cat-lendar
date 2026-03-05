@@ -20,6 +20,11 @@ PARSE_ERROR = "抱歉，我無法理解你的指令。\n你可以試試：\n• 
 CALENDAR_ERROR = "操作行事曆時發生錯誤，請稍後再試。"
 GENERAL_ERROR = "系統發生錯誤，請稍後再試。"
 
+# Cross-user notifications
+NOTIFY_EVENT_CREATED = "📅 {name} 新增了行程\n📌 {summary}\n🕐 {time}"
+NOTIFY_EVENT_UPDATED = "✏️ {name} 修改了行程\n📌 {summary}\n🕐 {time}"
+NOTIFY_EVENT_DELETED = "🗑️ {name} 刪除了行程：{summary}"
+
 # Reminders
 REMINDER_SET = "⏰ 已設定提醒：行程開始前 {minutes} 分鐘通知"
 REMINDER_UPDATED = "⏰ 已更新提醒設定：開始前 {minutes} 分鐘"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
@@ -7,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.models.intent import ActionType, CalendarIntent, EventDetails, TimeRange
 from app.models.user import UserState
-from app.services import auth, calendar, line_messaging, nlp
+from app.services import auth, calendar, calendar_notify, line_messaging, nlp
 from app.store import firestore as store
 from app.utils import i18n
 from app.config import settings
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 async def handle_message(user_id: str, reply_token: str, text: str) -> None:
     """訊息處理協調器：主要進入點"""
     text = text.strip()
+
+    # 背景登記用戶（fire-and-forget，不影響回覆速度）
+    asyncio.create_task(store.register_user(user_id))
 
     # 特殊指令
     if text in ("說明", "help", "幫助"):
@@ -127,6 +131,12 @@ async def _handle_create(
         msg += "\n" + i18n.REMINDER_SET.format(minutes=reminder_minutes)
 
     await line_messaging.reply_text(reply_token, msg)
+
+    # 通知其他用戶
+    asyncio.create_task(
+        calendar_notify.notify_others("create", user_id, event.get("summary", ""), time_str)
+    )
+
     return msg
 
 
@@ -177,6 +187,12 @@ async def _handle_update(
         time_str = _get_event_time_str(updated)
         msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
         await line_messaging.reply_text(reply_token, msg)
+
+        # 通知其他用戶
+        asyncio.create_task(
+            calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
+        )
+
         return msg
     else:
         await _save_selection_state(user_id, "select_event_for_update", events, intent)
@@ -199,6 +215,12 @@ async def _handle_delete(
         await calendar.delete_event(credentials, events[0]["id"], line_user_id=user_id)
         msg = i18n.EVENT_DELETED.format(summary=summary)
         await line_messaging.reply_text(reply_token, msg)
+
+        # 通知其他用戶
+        asyncio.create_task(
+            calendar_notify.notify_others("delete", user_id, summary)
+        )
+
         return msg
     else:
         await _save_selection_state(user_id, "select_event_for_delete", events, intent)
@@ -241,6 +263,12 @@ async def _handle_selection(
             time_str = _get_event_time_str(updated)
             msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
             await line_messaging.reply_text(reply_token, msg)
+
+            # 通知其他用戶
+            asyncio.create_task(
+                calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
+            )
+
             return msg
 
         elif user_state.action == "select_event_for_delete":
@@ -248,6 +276,12 @@ async def _handle_selection(
             await calendar.delete_event(credentials, selected["id"], line_user_id=user_id)
             msg = i18n.EVENT_DELETED.format(summary=summary)
             await line_messaging.reply_text(reply_token, msg)
+
+            # 通知其他用戶
+            asyncio.create_task(
+                calendar_notify.notify_others("delete", user_id, summary)
+            )
+
             return msg
     except Exception:
         logger.exception("Selection action failed")

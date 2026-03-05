@@ -20,6 +20,26 @@ def get_db() -> AsyncClient:
     return _db
 
 
+# ── Users (已互動用戶登記) ──
+
+
+async def register_user(line_user_id: str) -> None:
+    """登記或更新用戶的 last_seen（用於跨用戶推播通知）"""
+    now = datetime.now(timezone.utc)
+    ref = get_db().collection("users").document(line_user_id)
+    doc = await ref.get()
+    if doc.exists:
+        await ref.update({"last_seen": now})
+    else:
+        await ref.set({"first_seen": now, "last_seen": now})
+
+
+async def get_all_user_ids() -> list[str]:
+    """取得所有已登記的用戶 ID"""
+    docs = await get_db().collection("users").get()
+    return [doc.id for doc in docs]
+
+
 # ── User States (對話狀態) ──
 
 

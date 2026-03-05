@@ -333,6 +333,8 @@ async def test_handle_message_loads_and_saves_conversation():
         patch("app.handlers.message.calendar") as mock_calendar,
     ):
         # Setup mocks
+        mock_store.register_user = AsyncMock()
+        mock_store.register_user = AsyncMock()
         mock_store.get_user_state = AsyncMock(return_value=None)
         mock_store.get_conversation_history = AsyncMock(return_value=[])
         mock_store.append_conversation_turn = AsyncMock()
@@ -383,6 +385,7 @@ async def test_handle_message_saves_conversation_on_clarification():
         patch("app.handlers.message.line_messaging") as mock_line,
         patch("app.handlers.message.auth") as mock_auth,
     ):
+        mock_store.register_user = AsyncMock()
         mock_store.get_user_state = AsyncMock(return_value=None)
         mock_store.get_conversation_history = AsyncMock(return_value=[])
         mock_store.append_conversation_turn = AsyncMock()

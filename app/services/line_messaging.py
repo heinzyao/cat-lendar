@@ -40,3 +40,14 @@ async def push_text(user_id: str, text: str) -> None:
             messages=[TextMessage(text=text)],
         )
     )
+
+
+async def get_display_name(user_id: str) -> str | None:
+    """取得 LINE 用戶顯示名稱，失敗時回傳 None"""
+    try:
+        api = _get_api()
+        profile = api.get_profile(user_id)
+        return profile.display_name
+    except Exception:
+        logger.warning("Failed to get profile for %s", user_id)
+        return None
