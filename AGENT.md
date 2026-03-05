@@ -13,7 +13,14 @@
 | 語言 | Python 3.12（Docker）／Python 3.14（本地開發） |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
-| 最新 Revision | `line-calendar-bot-00010-wqp` |
+| 最新 Revision | `line-calendar-bot-00015-2ff` |
+| 測試數量 | 64 個（`uv run python -m pytest tests/ -q`） |
+
+---
+
+## 架構概覽
+
+**共享行事曆模式**：App owner 預先完成一次 OAuth 授權（Desktop app 類型），取得 refresh token 存入 Secret Manager。所有 LINE 用戶共用同一個 Google Calendar，無需個別授權流程。
 
 ---
 
@@ -21,30 +28,31 @@
 
 ```
 app/
-├── config.py              # 所有環境變數（pydantic-settings）
-├── main.py                # FastAPI 入口，路由掛載
-├── handlers/message.py    # ★ 核心協調器：接收訊息 → NLP → 執行
+├── config.py                 # 所有環境變數（pydantic-settings）
+├── main.py                   # FastAPI 入口，路由掛載（webhook + notify）
+├── handlers/message.py       # ★ 核心協調器：接收訊息 → NLP → 執行 → 跨用戶通知
 ├── services/
-│   ├── nlp.py             # ★ Claude API 意圖解析（parse_intent + parse_update_details 二次解析）
-│   ├── auth.py            # ★ Google OAuth + PKCE + token refresh
-│   ├── calendar.py        # Google Calendar CRUD
-│   ├── local_calendar.py  # Firestore 內建行事曆 CRUD
-│   └── line_messaging.py  # LINE reply / push
+│   ├── nlp.py                # ★ Claude API 意圖解析（parse_intent + parse_update_details 二次解析）
+│   ├── auth.py               # get_shared_credentials()：使用 app owner refresh token
+│   ├── calendar.py           # Google Calendar CRUD（使用 settings.google_calendar_id）
+│   ├── calendar_notify.py    # ★ 行事曆異動後推播通知給其他用戶
+│   ├── notification.py       # 行程到期提醒發送（Cloud Run Scheduler 觸發）
+│   └── line_messaging.py     # LINE reply / push / get_display_name
 ├── models/
-│   ├── intent.py          # CalendarIntent（action, event_details, time_range, original_message…）
-│   └── user.py            # UserToken, OAuthState, UserState
+│   ├── intent.py             # CalendarIntent（action, event_details, time_range, original_message…）
+│   └── user.py               # UserState, ConversationMessage, ConversationHistory
 ├── store/
-│   ├── firestore.py       # Firestore CRUD（users / user_prefs / local_events / states）
-│   └── encryption.py      # AES-256-GCM 加解密
+│   ├── firestore.py          # Firestore CRUD（users / user_prefs / user_states / conversation_history / reminders）
+│   └── encryption.py         # AES-256-GCM 加解密（ENCRYPTION_KEY）
 └── utils/
-    ├── datetime_utils.py  # 時區、格式化（Asia/Taipei）
-    └── i18n.py            # 繁體中文訊息模板
+    ├── datetime_utils.py     # 時區、格式化（Asia/Taipei）
+    └── i18n.py               # 繁體中文訊息模板
 scripts/
-├── deploy.sh              # 建置 + 推送 + 部署到 Cloud Run
-├── dev.sh                 # 本地開發（uvicorn + ngrok）
-├── setup_gcp.sh           # 一次性 GCP 基礎建設
-└── update_secret.sh       # 更新 Secret Manager 密鑰
-tests/                     # pytest，51 個測試，asyncio_mode=auto
+├── get_token.py              # 一次性：app owner 授權取得 refresh token
+├── deploy.sh                 # 建置 + 推送 + 部署到 Cloud Run
+├── dev.sh                    # 本地開發（uvicorn + ngrok）
+└── update_secret.sh          # 更新 Secret Manager 密鑰
+tests/                        # 64 個測試，asyncio_mode=auto
 ```
 
 ---
@@ -53,36 +61,51 @@ tests/                     # pytest，51 個測試，asyncio_mode=auto
 
 ```
 users/{line_user_id}
-  encrypted_access_token, encrypted_refresh_token, token_expiry, scopes
+  first_seen: timestamp
+  last_seen:  timestamp          ← 每次互動更新，供跨用戶通知使用
 
-user_prefs/{line_user_id}
-  calendar_mode: "google" | "local", updated_at
-
-local_events/{line_user_id}/events/{event_id}
-  summary, start_time, end_time, location, description, all_day
-  created_at, updated_at
-
-oauth_states/{state_token}          ← TTL 10 分鐘
-  line_user_id, expires_at, code_verifier
-
-user_states/{line_user_id}          ← TTL 5 分鐘
+user_states/{line_user_id}       ← TTL 5 分鐘（expires_at）
   action, candidates, original_intent, expires_at
-```
 
-conversation_history/{line_user_id}   ← TTL 30 分鐘
+conversation_history/{line_user_id}  ← TTL 30 分鐘（updated_at）
   messages: [{role, content, timestamp}, ...]
   updated_at
+
+reminders/{reminder_id}
+  line_user_id, event_id, event_summary
+  start_time, reminder_at, reminder_minutes
+  sent: bool, created_at
+
+user_prefs/{line_user_id}
+  default_reminder_minutes: int | null
+  updated_at
+```
 
 ### UserState.action 合法值
 
 | action | 情境 |
 |--------|------|
-| `choose_calendar_mode` | 新使用者選擇模式 |
-| `switch_calendar_choice` | 切換行事曆目標選擇 |
-| `confirm_migration` | 確認是否遷移行程 |
-| `pending_local_to_google_migration` | OAuth 完成後執行 L→G 遷移 |
 | `select_event_for_update` | 多筆事件更新選擇 |
 | `select_event_for_delete` | 多筆事件刪除選擇 |
+
+---
+
+## 環境變數
+
+所有密鑰存放於 **GCP Secret Manager**，本地開發從 `.env` 讀取。
+**不要在任何文件中記錄密鑰明文。**
+
+| 變數 | 來源 | 說明 |
+|------|------|------|
+| `LINE_CHANNEL_SECRET` | Secret Manager | LINE Channel 驗簽金鑰 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Secret Manager | LINE push/reply token |
+| `ANTHROPIC_API_KEY` | Secret Manager | Claude API |
+| `GOOGLE_CLIENT_ID` | Secret Manager | OAuth Client ID（Desktop app 類型） |
+| `GOOGLE_CLIENT_SECRET` | Secret Manager | OAuth Client Secret |
+| `GOOGLE_REFRESH_TOKEN` | Secret Manager | App owner 預授權 refresh token |
+| `ENCRYPTION_KEY` | Secret Manager | AES-256-GCM 金鑰（base64 32 bytes） |
+| `GCP_PROJECT_ID` | deploy.sh 自動讀取 | GCP 專案 ID |
+| `GOOGLE_CALENDAR_ID` | config 預設 `primary` | 目標行事曆 ID |
 
 ---
 
@@ -90,11 +113,11 @@ conversation_history/{line_user_id}   ← TTL 30 分鐘
 
 | 問題 | 說明 |
 |------|------|
-| PKCE 必要 | Google 強制要求 PKCE，`auth.py` 已實作 |
-| redirect_uri 格式 | `deploy.sh` 從 project number 計算穩定 URL，避免 `*.a.run.app` 格式不符 |
 | Python 3.14 警告 | `line-bot-sdk` 使用 Pydantic V1，Docker image 固定使用 3.12 無此問題 |
-| OAuth Testing 狀態 | GCP OAuth consent screen 處於 Testing，只有 test users 可授權 |
-| Firestore TTL | `oauth_states` 10 分鐘、`user_states` 5 分鐘，需在 GCP 設定 TTL policy |
+| Firestore TTL | `user_states` 5 分鐘、`conversation_history` 30 分鐘，需在 GCP 設定 TTL policy |
+| refresh token 失效 | 重新執行 `scripts/get_token.py` 並更新 Secret Manager |
+| 跨用戶通知 | 只有曾傳訊息給 bot 的用戶才會被登記到 `users/` 集合，才能收到通知 |
+| get_display_name | LINE Profile API 需用戶加 bot 為好友，失敗時 fallback 到 `用戶 ...末四碼` |
 
 ---
 
@@ -142,7 +165,7 @@ conversation_history/{line_user_id}   ← TTL 30 分鐘
 2. 最小化修改範圍
 3. 執行 uv run python -m pytest tests/ -q → 全部通過
 4. git commit（Conventional Commits 格式）
-5. 部署：source ~/Project/.env && bash scripts/deploy.sh
+5. 部署：bash scripts/deploy.sh
 6. 更新 AGENT.md 的「最新 Revision」
 ```
 
@@ -150,8 +173,6 @@ conversation_history/{line_user_id}   ← TTL 30 分鐘
 
 ```
 <type>: <description>
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ```
 
 | type | 用途 |
@@ -165,38 +186,21 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 ---
 
-## 環境變數
-
-所有密鑰存放於 **GCP Secret Manager**，本地開發從 `~/Project/.env` 讀取。
-**不要在任何文件中記錄密鑰明文。**
-
-| 變數 | 來源 |
-|------|------|
-| `LINE_CHANNEL_SECRET` | Secret Manager |
-| `LINE_CHANNEL_ACCESS_TOKEN` | Secret Manager |
-| `ANTHROPIC_API_KEY` | Secret Manager / `~/Project/.env` |
-| `GOOGLE_CLIENT_ID` | Secret Manager / `~/Project/.env` |
-| `GOOGLE_CLIENT_SECRET` | Secret Manager / `~/Project/.env` |
-| `ENCRYPTION_KEY` | Secret Manager |
-| `GCP_PROJECT_ID` | `deploy.sh` 自動讀取 gcloud config |
-
----
-
 ## 已完成功能
 
-- [x] Google Calendar 整合（OAuth + PKCE）
-- [x] Firestore 內建行事曆（local mode）
-- [x] 行事曆雙模式切換與資料遷移
+- [x] 共享 Google Calendar（app owner 一次性授權，所有用戶共用）
 - [x] 多筆事件選擇流程（update / delete）
 - [x] NLP 二次解析（parse_update_details）：相對時間更新保持持續時間
 - [x] 對話記憶（conversation memory）：多輪對話上下文理解，支援代名詞、省略、補充資訊
+- [x] 行程提醒（LINE push message，Cloud Run Scheduler 觸發）
+- [x] 預設提醒設定（每個新行程自動套用）
+- [x] description 欄位附加操作者 LINE ID `[LINE: {user_id}]`
+- [x] 跨用戶異動通知（新增／修改／刪除後推播給其他所有用戶）
 
 ---
 
 ## 擴充方向（待辦）
 
 - [ ] 支援 recurring events（每週定期行程）
-- [ ] 多 Google 帳號切換
-- [ ] 提醒功能（透過 LINE push message）
-- [ ] 群組 bot 支援
 - [ ] 使用量統計（每日 Claude API 呼叫次數）
+- [ ] 通知訂閱設定（用戶可選擇開關接收異動通知）
