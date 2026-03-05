@@ -6,7 +6,7 @@
 2. [架構概覽](#架構概覽)
 3. [GCP 基礎設施設定（首次）](#gcp-基礎設施設定首次)
 4. [LINE Bot 設定](#line-bot-設定)
-5. [Google OAuth 設定](#google-oauth-設定)
+5. [App Owner 授權設定](#app-owner-授權設定)
 6. [部署到 Cloud Run](#部署到-cloud-run)
 7. [本地開發](#本地開發)
 8. [日常維運](#日常維運)
@@ -42,23 +42,25 @@ LINE User
    │  傳送訊息
    ▼
 Cloud Run (FastAPI)
-   ├── POST /webhook       ← LINE Messaging API
-   └── GET  /oauth/callback ← Google OAuth 2.0
+   └── POST /webhook       ← LINE Messaging API
          │
-         ├── Claude API    (自然語言解析)
-         ├── Google Calendar API  (行程 CRUD)
-         └── Cloud Firestore      (token 儲存、對話狀態)
+         ├── Claude API             (自然語言解析)
+         ├── Google Calendar API    (共享行事曆 CRUD)
+         └── Cloud Firestore        (對話狀態、提醒)
                 │
                 └── Secret Manager (加密金鑰、API 金鑰)
 ```
+
+**共享行事曆模式**：所有 LINE 用戶共用 app owner 的單一 Google Calendar。行程的 description 欄位自動附加 `[LINE: {user_id}]` 標記操作者。App owner 預先完成一次 OAuth 授權，取得 refresh token 存入 Secret Manager。
 
 ### Firestore Collections
 
 | Collection | 用途 | TTL |
 |-----------|------|-----|
-| `users/{line_user_id}` | 加密的 Google OAuth token | 無 |
-| `oauth_states/{state}` | CSRF state（10 分鐘） | `expires_at` |
-| `user_states/{line_user_id}` | 模糊匹配暫存狀態（5 分鐘） | `expires_at` |
+| `user_states/{line_user_id}` | 多筆匹配選擇暫存狀態（5 分鐘） | `expires_at` |
+| `conversation_history/{line_user_id}` | 對話記憶（30 分鐘） | `updated_at` |
+| `reminders/{reminder_id}` | 行程提醒佇列 | 無（sent 後保留） |
+| `user_prefs/{line_user_id}` | 預設提醒設定 | 無 |
 
 ---
 
@@ -101,7 +103,7 @@ export GCP_PROJECT_ID=your-project-id   # 或從 gcloud config 讀取
 | `GOOGLE_CLIENT_SECRET` | GCP Console > OAuth 2.0 Credentials |
 | `ENCRYPTION_KEY` | **自動產生，無需輸入** |
 
-> **注意**：`GOOGLE_REDIRECT_URI` 會在 `deploy.sh` 首次執行後自動填入，不需手動設定。
+> **注意**：`GOOGLE_REFRESH_TOKEN` 需在 [App Owner 授權設定](#app-owner-授權設定) 步驟中另行建立。
 
 ---
 
@@ -140,60 +142,64 @@ export GCP_PROJECT_ID=your-project-id   # 或從 gcloud config 讀取
 
 填入後點擊 **Verify** 確認連線正常（應顯示 Success）。
 
-### 步驟 4：LINE Bot 功能建議設定
-
-在 **Messaging API** tab：
-
-| 功能 | 建議設定 | 原因 |
-|------|---------|------|
-| Allow bot to join group chats | OFF | 目前僅支援 1 對 1 |
-| Allow users to open the profile page | ON | 使用者可查看 Bot 資訊 |
-
 ---
 
-## Google OAuth 設定
+## App Owner 授權設定
 
-> 必須在部署之前完成 OAuth consent screen 設定，否則使用者無法授權。
+> App owner 需完成一次性授權，取得 Google Calendar refresh token，供所有使用者共用。
 
 ### 步驟 1：設定 OAuth Consent Screen
 
 1. GCP Console → **APIs & Services** → **OAuth consent screen**
 2. User type 選擇 **External**，點擊 **Create**
-3. 填寫應用程式資訊：
-
-   | 欄位 | 填入值 |
-   |------|-------|
-   | App name | 日曆助手（或任意名稱） |
-   | User support email | 你的 email |
-   | Developer contact email | 你的 email |
-
-4. **Scopes** 頁面 → 點擊 **Add or Remove Scopes**：
-   - 搜尋 `calendar`
-   - 勾選 `https://www.googleapis.com/auth/calendar`
-   - 點擊 **Update**
-
-5. **Test users** 頁面（測試期間）：
-   - 點擊 **Add Users**
-   - 加入所有需要測試的 Google 帳號
-   - 正式上線前此步驟為必要，否則其他使用者無法授權
-
-6. 儲存並返回
-
-> **注意**：應用程式正式上線前，需回到 OAuth consent screen 點擊 **Publish App** 並提交 Google 審核。個人使用或內部測試可維持 Testing 狀態，但限 100 個 test users。
+3. 填寫應用程式資訊：App name、User support email、Developer contact email
+4. **Scopes** → 加入 `https://www.googleapis.com/auth/calendar`
+5. **Test users** → 加入 app owner 的 Google 帳號
+6. 儲存
 
 ### 步驟 2：建立 OAuth 2.0 Credentials
 
 1. GCP Console → **APIs & Services** → **Credentials**
 2. 點擊 **Create Credentials** → **OAuth client ID**
-3. Application type 選擇 **Web application**
-4. Name：例如「LINE Calendar Bot」
-5. **Authorized redirect URIs**：
-   - 本地開發：加入 ngrok 提供的 URL，例如 `https://xxxx.ngrok-free.app/oauth/callback`
-   - 正式部署：加入 Cloud Run URL，例如 `https://line-calendar-bot-xxxx-de.a.run.app/oauth/callback`
-   - ⚠️ 兩個 URI 都可以加入，方便開發
-6. 點擊 **Create**，取得：
-   - **Client ID** → `GOOGLE_CLIENT_ID`
-   - **Client Secret** → `GOOGLE_CLIENT_SECRET`
+3. Application type 選擇 **Desktop app**（或 Web app）
+4. 取得 `GOOGLE_CLIENT_ID` 與 `GOOGLE_CLIENT_SECRET`
+
+### 步驟 3：執行授權腳本取得 refresh token
+
+```bash
+# 從 Secret Manager 取得 credentials，執行授權腳本
+GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID) \
+GOOGLE_CLIENT_SECRET=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_SECRET) \
+uv run python scripts/get_token.py
+```
+
+腳本會開啟瀏覽器，完成 Google 授權後輸出 refresh token：
+
+```
+============================================================
+授權成功！請將以下 refresh token 設定到環境變數：
+============================================================
+
+GOOGLE_REFRESH_TOKEN=1//0gXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+### 步驟 4：將 refresh token 存入 Secret Manager
+
+```bash
+echo -n "YOUR_REFRESH_TOKEN" | gcloud secrets create GOOGLE_REFRESH_TOKEN \
+  --data-file=- \
+  --project=amateur-intelligence-service
+
+# 授予 Service Account 存取權
+gcloud secrets add-iam-policy-binding GOOGLE_REFRESH_TOKEN \
+  --member="serviceAccount:line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+> 若需更新 refresh token（例如過期），使用 `update_secret.sh`：
+> ```bash
+> ./scripts/update_secret.sh GOOGLE_REFRESH_TOKEN
+> ```
 
 ---
 
@@ -207,13 +213,13 @@ export GCP_PROJECT_ID=your-project-id   # 或從 gcloud config 讀取
 
 腳本執行流程：
 
-1. 以 `git rev-parse --short HEAD` 作為 image tag
-2. `docker build --platform linux/amd64` 建置 image
-3. Push 到 Artifact Registry
-4. `gcloud run deploy` 部署，從 Secret Manager 掛載所有金鑰
-5. 自動偵測並填入 `GOOGLE_REDIRECT_URI`
+1. 確認 `GOOGLE_REFRESH_TOKEN` secret 已存在
+2. 以 `git rev-parse --short HEAD` 作為 image tag
+3. `docker build --platform linux/amd64` 建置 image
+4. Push 到 Artifact Registry
+5. `gcloud run deploy` 部署，從 Secret Manager 掛載所有金鑰
 6. 執行 `/health` 健康檢查
-7. 輸出 Webhook URL 與 OAuth Redirect URI
+7. 輸出 Webhook URL
 
 輸出範例：
 
@@ -227,8 +233,7 @@ export GCP_PROJECT_ID=your-project-id   # 或從 gcloud config 讀取
   LINE Bot Webhook URL（填入 LINE Developers Console）：
   https://line-calendar-bot-xxxx-de.a.run.app/webhook
 
-  Google OAuth Redirect URI（填入 GCP OAuth 2.0 Credentials）：
-  https://line-calendar-bot-xxxx-de.a.run.app/oauth/callback
+  Image: asia-east1-docker.pkg.dev/.../line-calendar-bot:abc1234
 ```
 
 ### Cloud Run 設定說明
@@ -251,7 +256,7 @@ export GCP_PROJECT_ID=your-project-id   # 或從 gcloud config 讀取
 
 ```bash
 cp .env.example .env
-# 編輯 .env，填入所有金鑰
+# 編輯 .env，填入所有金鑰（包含 GOOGLE_REFRESH_TOKEN）
 ```
 
 ### 步驟 2：安裝相依
@@ -269,31 +274,7 @@ uv sync
 腳本會：
 1. 啟動 uvicorn（port 8080，hot reload）
 2. 啟動 ngrok tunnel
-3. 印出 Webhook URL 與 OAuth Redirect URI
-
-```
-════════════════════════════════════════════════════════
-  本地開發環境已就緒
-════════════════════════════════════════════════════════
-
-  LINE Bot Webhook URL：
-  https://xxxx.ngrok-free.app/webhook
-
-  Google OAuth Redirect URI：
-  https://xxxx.ngrok-free.app/oauth/callback
-
-  ngrok 管理介面: http://localhost:4040
-  按 Ctrl+C 停止所有服務
-```
-
-> ngrok 免費方案每次啟動 URL 都會改變，需重新填入 LINE Developers Console。若要固定 URL，可使用 ngrok 付費方案或 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)。
-
-### ngrok 首次設定
-
-```bash
-# 至 https://dashboard.ngrok.com/ 取得 authtoken
-ngrok config add-authtoken <YOUR_AUTHTOKEN>
-```
+3. 印出 Webhook URL
 
 ---
 
@@ -319,6 +300,19 @@ git add . && git commit -m "..."
 ./scripts/deploy.sh
 ```
 
+### 更新 Refresh Token（token 過期時）
+
+```bash
+# 重新授權取得新 token
+GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID) \
+GOOGLE_CLIENT_SECRET=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_SECRET) \
+uv run python scripts/get_token.py
+
+# 更新 Secret Manager
+./scripts/update_secret.sh GOOGLE_REFRESH_TOKEN <new_token>
+./scripts/deploy.sh
+```
+
 ### 查看 Cloud Run 日誌
 
 ```bash
@@ -334,39 +328,38 @@ gcloud run services logs tail line-calendar-bot \
   --region=asia-east1
 ```
 
-### 撤銷某位使用者的授權（Firestore）
-
-```bash
-# 刪除 Firestore 中的 user token
-gcloud firestore documents delete \
-  "projects/<PROJECT_ID>/databases/(default)/documents/users/<LINE_USER_ID>"
-```
-
 ---
 
 ## Firestore 資料結構
 
 ```
-users/
-  {line_user_id}/
-    encrypted_access_token:  string   # AES-256-GCM 加密
-    encrypted_refresh_token: string   # AES-256-GCM 加密
-    token_expiry:            timestamp
-    scopes:                  string[]
-    created_at:              timestamp
-    updated_at:              timestamp
-
-oauth_states/
-  {state_token}/
-    line_user_id:  string
-    expires_at:    timestamp  ← TTL field（10 分鐘自動刪除）
-
 user_states/
   {line_user_id}/
     action:          string   # "select_event_for_update" | "select_event_for_delete"
     candidates:      array    # 候選行程列表
     original_intent: map      # 原始意圖 JSON
     expires_at:      timestamp  ← TTL field（5 分鐘自動刪除）
+
+conversation_history/
+  {line_user_id}/
+    messages:    array     # [{role, content, timestamp}]
+    updated_at:  timestamp ← 超過 30 分鐘自動忽略
+
+reminders/
+  {reminder_id}/
+    line_user_id:      string
+    event_id:          string
+    event_summary:     string
+    start_time:        timestamp
+    reminder_at:       timestamp
+    reminder_minutes:  integer
+    sent:              boolean
+    created_at:        timestamp
+
+user_prefs/
+  {line_user_id}/
+    default_reminder_minutes: integer | null
+    updated_at:               timestamp
 ```
 
 ---
@@ -379,14 +372,11 @@ user_states/
 2. 確認 **Use webhook** 為 ON
 3. 確認 Cloud Run 服務正常：`curl https://<url>/health`
 
-### Google 授權頁面在 LINE 內建瀏覽器無法完成
+### Google Calendar 操作失敗
 
-這是 Google 的安全限制，系統已透過在授權 URL 加入 `openExternalBrowser=1` 參數強制開啟外部瀏覽器。若仍有問題，請確認 LINE App 版本已更新。
-
-### token refresh 失敗 / 需要重新授權
-
-使用者傳送「解除授權」後重新點選授權按鈕即可。
-若批次發生（如 refresh token 過期），可至 Firestore console 刪除對應的 `users/{line_user_id}` 文件。
+1. 確認 `GOOGLE_REFRESH_TOKEN` secret 存在且有效
+2. 確認 Service Account 有存取 `GOOGLE_REFRESH_TOKEN` secret 的權限
+3. 若 token 過期，依[更新 Refresh Token](#更新-refresh-tokentoken-過期時)步驟重新授權
 
 ### 部署後 Secret 讀不到
 
@@ -405,54 +395,6 @@ gcloud secrets add-iam-policy-binding <SECRET_NAME> \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-### OAuth consent screen 審核
-
-測試期間（Testing 狀態）只有加入 **Test users** 的 Google 帳號可以授權。
-若要開放所有使用者，需在 OAuth consent screen 點擊 **Publish App** 並提交 Google 審核，審核重點：
-- 應用程式確實需要 Calendar 存取權限
-- 隱私政策頁面（需自行架設）
-- 首頁 URL
-
-### 授權失敗：invalid_grant: Missing code verifier
-
-**現象**：OAuth callback 顯示「授權失敗，請稍後再試」，Cloud Run 日誌出現：
-```
-oauthlib.oauth2.rfc6749.errors.InvalidGrantError: (invalid_grant) Missing code verifier.
-```
-
-**原因**：Google 自 2025 年起對 Web Application 類型的 OAuth client 強制要求 PKCE（Proof Key for Code Exchange）。v1.0 程式碼未實作 PKCE。
-
-**已修復（v1.1）**：已在 `create_auth_url` 生成 `code_verifier` / `code_challenge`，存入 Firestore，並在 `fetch_token` 時帶入 `code_verifier`。升級至最新部署版本即可。
-
----
-
-### Error 400: redirect_uri_mismatch
-
-**現象**：點選 LINE 授權連結後，Google 顯示 `redirect_uri_mismatch` 錯誤。
-
-**原因**：`deploy.sh` 舊版使用 `gcloud run services describe --format=value(status.url)` 偵測 redirect URI，該指令回傳全域格式 URL（`*.a.run.app`），與 GCP OAuth 登記的區域格式（`*.<region>.run.app`）不符。
-
-**已根治（`deploy.sh` 已修正）**：腳本改為從 project number 直接計算穩定 URL：
-
-```bash
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
-STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
-```
-
-如需手動修復舊版部署：
-
-```bash
-gcloud run services update line-calendar-bot \
-  --region=asia-east1 \
-  --update-env-vars="GOOGLE_REDIRECT_URI=https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback"
-```
-
-確認 **GCP Console → APIs & Services → Credentials → OAuth 2.0 Client ID** 的 Authorized redirect URIs 包含：
-
-```
-https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
-```
-
 ---
 
 ## 已部署環境
@@ -462,8 +404,6 @@ https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback
 | GCP 專案 | `amateur-intelligence-service` |
 | 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
-| OAuth Callback | `https://line-calendar-bot-132888979367.asia-east1.run.app/oauth/callback` |
 | 區域 | `asia-east1` |
 | Service Account | `line-calendar-bot-sa@amateur-intelligence-service.iam.gserviceaccount.com` |
 | Artifact Registry | `asia-east1-docker.pkg.dev/amateur-intelligence-service/line-bot/line-calendar-bot` |
-| 最新 Revision | `line-calendar-bot-00009-6qd` |

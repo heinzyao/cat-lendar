@@ -5,23 +5,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class UserToken(BaseModel):
-    line_user_id: str
-    encrypted_access_token: str
-    encrypted_refresh_token: str
-    token_expiry: datetime
-    scopes: list[str] = []
-    created_at: datetime
-    updated_at: datetime
-
-
-class OAuthState(BaseModel):
-    state_token: str
-    line_user_id: str
-    expires_at: datetime
-    code_verifier: str | None = None
-
-
 class UserState(BaseModel):
     """暫存使用者對話狀態，例如選擇要編輯哪筆行程"""
 

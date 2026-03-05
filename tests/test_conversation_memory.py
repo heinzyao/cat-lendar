@@ -12,7 +12,7 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test_client_id")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test_client_secret")
-os.environ.setdefault("GOOGLE_REDIRECT_URI", "https://example.com/oauth/callback")
+os.environ.setdefault("GOOGLE_REFRESH_TOKEN", "test_refresh_token")
 os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
@@ -334,9 +334,9 @@ async def test_handle_message_loads_and_saves_conversation():
     ):
         # Setup mocks
         mock_store.get_user_state = AsyncMock(return_value=None)
-        mock_store.get_calendar_mode = AsyncMock(return_value="local")
         mock_store.get_conversation_history = AsyncMock(return_value=[])
         mock_store.append_conversation_turn = AsyncMock()
+        mock_auth.get_shared_credentials = MagicMock(return_value=MagicMock())
 
         mock_nlp.parse_intent = AsyncMock(
             return_value=MagicMock(
@@ -353,7 +353,7 @@ async def test_handle_message_loads_and_saves_conversation():
         )
 
         mock_line.reply_text = AsyncMock()
-        mock_store.list_local_events = AsyncMock(return_value=[])
+        mock_calendar.query_events = AsyncMock(return_value=[])
 
         from app.handlers.message import handle_message
 
@@ -381,11 +381,12 @@ async def test_handle_message_saves_conversation_on_clarification():
         patch("app.handlers.message.store") as mock_store,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_line,
+        patch("app.handlers.message.auth") as mock_auth,
     ):
         mock_store.get_user_state = AsyncMock(return_value=None)
-        mock_store.get_calendar_mode = AsyncMock(return_value="local")
         mock_store.get_conversation_history = AsyncMock(return_value=[])
         mock_store.append_conversation_turn = AsyncMock()
+        mock_auth.get_shared_credentials = MagicMock(return_value=MagicMock())
 
         mock_nlp.parse_intent = AsyncMock(
             return_value=MagicMock(

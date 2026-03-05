@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
+from app.config import settings
 from app.models.intent import EventDetails, TimeRange
+from app.store import firestore as store
 from app.utils.datetime_utils import format_event_time, to_date_str, to_rfc3339
 
 logger = logging.getLogger(__name__)
@@ -16,8 +20,18 @@ def _get_service(credentials: Credentials):
     return build("calendar", "v3", credentials=credentials)
 
 
+def _build_description(original: str | None, line_user_id: str) -> str:
+    """在 description 尾端附加/更新操作者 LINE ID 標記"""
+    base = re.sub(r"\s*\[LINE: [^\]]+\]", "", original or "").rstrip()
+    tag = f"[LINE: {line_user_id}]"
+    return f"{base}\n{tag}".strip() if base else tag
+
+
 async def create_event(
-    credentials: Credentials, details: EventDetails
+    credentials: Credentials,
+    details: EventDetails,
+    line_user_id: str | None = None,
+    reminder_minutes: int | None = None,
 ) -> dict:
     service = _get_service(credentials)
 
@@ -33,10 +47,37 @@ async def create_event(
 
     if details.location:
         body["location"] = details.location
-    if details.description:
-        body["description"] = details.description
 
-    event = service.events().insert(calendarId="primary", body=body).execute()
+    desc = details.description
+    if line_user_id:
+        desc = _build_description(desc, line_user_id)
+    if desc:
+        body["description"] = desc
+
+    effective_minutes = reminder_minutes if reminder_minutes is not None else details.reminder_minutes
+    if effective_minutes is not None:
+        body["reminders"] = {
+            "useDefault": False,
+            "overrides": [{"method": "popup", "minutes": effective_minutes}],
+        }
+
+    event = service.events().insert(calendarId=settings.google_calendar_id, body=body).execute()
+
+    if effective_minutes is not None and line_user_id and details.start_time:
+        reminder_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        reminder_at = details.start_time - timedelta(minutes=effective_minutes)
+        await store.create_reminder(reminder_id, {
+            "line_user_id": line_user_id,
+            "event_id": event["id"],
+            "event_summary": details.summary or "",
+            "start_time": details.start_time,
+            "reminder_at": reminder_at,
+            "reminder_minutes": effective_minutes,
+            "sent": False,
+            "created_at": now,
+        })
+
     return event
 
 
@@ -49,7 +90,7 @@ async def query_events(
     service = _get_service(credentials)
 
     params = {
-        "calendarId": "primary",
+        "calendarId": settings.google_calendar_id,
         "timeMin": to_rfc3339(time_range.start),
         "timeMax": to_rfc3339(time_range.end),
         "maxResults": max_results,
@@ -67,11 +108,11 @@ async def update_event(
     credentials: Credentials,
     event_id: str,
     updates: EventDetails,
+    line_user_id: str | None = None,
 ) -> dict:
     service = _get_service(credentials)
 
-    # 先取得現有 event
-    event = service.events().get(calendarId="primary", eventId=event_id).execute()
+    event = service.events().get(calendarId=settings.google_calendar_id, eventId=event_id).execute()
 
     if updates.summary:
         event["summary"] = updates.summary
@@ -87,20 +128,45 @@ async def update_event(
             event["end"] = {"dateTime": to_rfc3339(updates.end_time)}
     if updates.location is not None:
         event["location"] = updates.location
-    if updates.description is not None:
+
+    if line_user_id:
+        event["description"] = _build_description(
+            updates.description if updates.description is not None else event.get("description"),
+            line_user_id,
+        )
+    elif updates.description is not None:
         event["description"] = updates.description
 
     updated = (
         service.events()
-        .update(calendarId="primary", eventId=event_id, body=event)
+        .update(calendarId=settings.google_calendar_id, eventId=event_id, body=event)
         .execute()
     )
+
+    if updates.start_time is not None and line_user_id:
+        existing_reminder = await store.get_reminder_by_event(line_user_id, event_id)
+        if existing_reminder:
+            minutes = existing_reminder["reminder_minutes"]
+            new_reminder_at = updates.start_time - timedelta(minutes=minutes)
+            await store.update_reminder_by_event(line_user_id, event_id, {
+                "start_time": updates.start_time,
+                "reminder_at": new_reminder_at,
+                "event_summary": updates.summary or existing_reminder["event_summary"],
+                "sent": False,
+            })
+
     return updated
 
 
-async def delete_event(credentials: Credentials, event_id: str) -> None:
+async def delete_event(
+    credentials: Credentials,
+    event_id: str,
+    line_user_id: str | None = None,
+) -> None:
     service = _get_service(credentials)
-    service.events().delete(calendarId="primary", eventId=event_id).execute()
+    service.events().delete(calendarId=settings.google_calendar_id, eventId=event_id).execute()
+    if line_user_id:
+        await store.delete_reminder_by_event(line_user_id, event_id)
 
 
 def format_event_summary(event: dict) -> str:

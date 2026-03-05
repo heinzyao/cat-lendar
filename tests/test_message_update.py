@@ -11,7 +11,7 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test_client_id")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test_client_secret")
-os.environ.setdefault("GOOGLE_REDIRECT_URI", "https://example.com/oauth/callback")
+os.environ.setdefault("GOOGLE_REFRESH_TOKEN", "test_refresh_token")
 os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
@@ -40,6 +40,8 @@ _UPDATED_EVENT = {
     "end": {"dateTime": "2024-03-16T11:00:00+08:00"},
 }
 
+_MOCK_CREDS = MagicMock()
+
 
 def _make_intent(original_message: str = "把週會移到明天") -> CalendarIntent:
     return CalendarIntent(
@@ -67,23 +69,23 @@ async def test_handle_update_single_event_uses_parse_update_details():
     )
 
     with (
-        patch("app.handlers.message.local_calendar") as mock_lc,
+        patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
     ):
-        mock_lc.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
+        mock_cal.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
         mock_nlp.parse_update_details = AsyncMock(return_value=refined)
-        mock_lc.update_event = AsyncMock(return_value=_UPDATED_EVENT)
+        mock_cal.update_event = AsyncMock(return_value=_UPDATED_EVENT)
         mock_msg.reply_text = AsyncMock()
 
-        await _handle_update(_USER, _REPLY_TOKEN, intent, None, "local")
+        await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
-        # parse_update_details 應以 original_message 和原事件呼叫
         mock_nlp.parse_update_details.assert_awaited_once_with(
             intent.original_message, _SAMPLE_EVENT
         )
-        # update_event 應使用二次解析結果
-        mock_lc.update_event.assert_awaited_once_with(_USER, "evt001", refined)
+        mock_cal.update_event.assert_awaited_once_with(
+            _MOCK_CREDS, "evt001", refined, line_user_id=_USER
+        )
         mock_msg.reply_text.assert_awaited_once()
 
 
@@ -95,20 +97,19 @@ async def test_handle_update_single_event_fallback_to_event_details():
     intent = _make_intent()
 
     with (
-        patch("app.handlers.message.local_calendar") as mock_lc,
+        patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
     ):
-        mock_lc.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
+        mock_cal.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
         mock_nlp.parse_update_details = AsyncMock(return_value=None)
-        mock_lc.update_event = AsyncMock(return_value=_UPDATED_EVENT)
+        mock_cal.update_event = AsyncMock(return_value=_UPDATED_EVENT)
         mock_msg.reply_text = AsyncMock()
 
-        await _handle_update(_USER, _REPLY_TOKEN, intent, None, "local")
+        await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
-        # update_event 應 fallback 到 intent.event_details
-        mock_lc.update_event.assert_awaited_once_with(
-            _USER, "evt001", intent.event_details
+        mock_cal.update_event.assert_awaited_once_with(
+            _MOCK_CREDS, "evt001", intent.event_details, line_user_id=_USER
         )
 
 
@@ -120,7 +121,6 @@ async def test_handle_selection_update_uses_parse_update_details():
     intent = _make_intent()
     refined = EventDetails(summary="改名後的週會")
 
-    # selected 包含完整欄位（_save_selection_state 新格式）
     selected = {
         "id": "evt001",
         "summary": "週會",
@@ -140,21 +140,21 @@ async def test_handle_selection_update_uses_parse_update_details():
 
     with (
         patch("app.handlers.message.store") as mock_store,
-        patch("app.handlers.message.local_calendar") as mock_lc,
+        patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
     ):
         mock_store.delete_user_state = AsyncMock()
         mock_nlp.parse_update_details = AsyncMock(return_value=refined)
-        mock_lc.update_event = AsyncMock(return_value={**selected, "summary": "改名後的週會"})
+        mock_cal.update_event = AsyncMock(return_value={**selected, "summary": "改名後的週會"})
         mock_msg.reply_text = AsyncMock()
 
-        await _handle_selection(_USER, _REPLY_TOKEN, "1", user_state, None, "local")
+        await _handle_selection(_USER, _REPLY_TOKEN, "1", user_state, _MOCK_CREDS)
 
-        # parse_update_details 應以 original_message 和 selected 呼叫
         mock_nlp.parse_update_details.assert_awaited_once_with(
             intent.original_message, selected
         )
-        # update_event 應使用二次解析結果
-        mock_lc.update_event.assert_awaited_once_with(_USER, "evt001", refined)
+        mock_cal.update_event.assert_awaited_once_with(
+            _MOCK_CREDS, "evt001", refined, line_user_id=_USER
+        )
         mock_msg.reply_text.assert_awaited_once()

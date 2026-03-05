@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     # Google OAuth
     google_client_id: str
     google_client_secret: str
-    google_redirect_uri: str
+    google_refresh_token: str = ""
+    google_calendar_id: str = "primary"
 
     # Encryption
     encryption_key: str  # base64-encoded 32-byte key
@@ -21,14 +22,17 @@ class Settings(BaseSettings):
     # GCP
     gcp_project_id: str = ""
 
+    # Notification
+    notify_secret: str = ""
+    default_reminder_minutes: int = 15
+
     # App
     timezone: str = "Asia/Taipei"
-    oauth_state_ttl_seconds: int = 600  # 10 minutes
     user_state_ttl_seconds: int = 300  # 5 minutes
     conversation_history_ttl_seconds: int = 1800  # 30 minutes
     max_conversation_turns: int = 10
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

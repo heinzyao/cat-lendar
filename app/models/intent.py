@@ -11,6 +11,7 @@ class ActionType(str, Enum):
     QUERY = "query"
     UPDATE = "update"
     DELETE = "delete"
+    SET_REMINDER = "set_reminder"
     UNKNOWN = "unknown"
 
 
@@ -21,6 +22,7 @@ class EventDetails(BaseModel):
     location: str | None = None
     description: str | None = None
     all_day: bool = False
+    reminder_minutes: int | None = None
 
 
 class TimeRange(BaseModel):

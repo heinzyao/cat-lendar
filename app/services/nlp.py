@@ -34,31 +34,34 @@ def _build_system_prompt(has_history: bool = False) -> str:
 
 請將使用者的訊息解析為以下 JSON 格式，不要輸出其他文字：
 {{
-  "action": "create" | "query" | "update" | "delete" | "unknown",
+  "action": "create" | "query" | "update" | "delete" | "set_reminder" | "unknown",
   "event_details": {{
     "summary": "行程名稱",
     "start_time": "ISO8601 datetime",
     "end_time": "ISO8601 datetime",
     "location": "地點（可選）",
     "description": "描述（可選）",
-    "all_day": false
+    "all_day": false,
+    "reminder_minutes": 15
   }},
   "time_range": {{
     "start": "ISO8601 datetime",
     "end": "ISO8601 datetime"
   }},
-  "search_keyword": "搜尋關鍵字（修改/刪除時用）",
+  "search_keyword": "搜尋關鍵字（修改/刪除/設定提醒時用）",
   "confidence": 0.0-1.0,
   "clarification_needed": "需要使用者補充的資訊（可選）"
 }}
 
 規則：
-1. create: event_details 必填 summary 和 start_time。若未指定 end_time，預設 1 小時後。
+1. create: event_details 必填 summary 和 start_time。若未指定 end_time，預設 1 小時後。若有提及提前提醒，設定 reminder_minutes。
 2. query: time_range 必填。「今天」=今天 00:00~23:59，「這週」=本週一~週日，「明天」=明天整天。
 3. update: search_keyword 或 time_range 用來找到要修改的行程，event_details 放新的值。
 4. delete: search_keyword 或 time_range 用來找到要刪除的行程。
-5. 若資訊不足以執行操作，設 confidence < 0.5 並在 clarification_needed 說明。
-6. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。{history_note}"""
+5. set_reminder: 對已有行程設定提醒。用 search_keyword 或 time_range 找到行程，event_details.reminder_minutes 放提前分鐘數。
+6. 若資訊不足以執行操作，設 confidence < 0.5 並在 clarification_needed 說明。
+7. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。
+8. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}"""
 
 
 async def parse_intent(

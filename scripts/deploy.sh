@@ -46,10 +46,10 @@ command -v docker >/dev/null 2>&1 || error "請先安裝 Docker"
 
 gcloud config set project "$PROJECT_ID" --quiet
 
-# 從 project number 計算穩定的 Cloud Run URL（區域格式，與 GCP OAuth 一致）
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" --quiet)
-STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
-info "Stable URL: $STABLE_SERVICE_URL"
+# 確認 GOOGLE_REFRESH_TOKEN secret 已建立
+if ! gcloud secrets describe GOOGLE_REFRESH_TOKEN --project="$PROJECT_ID" --quiet >/dev/null 2>&1; then
+  error "GOOGLE_REFRESH_TOKEN secret 不存在！請先執行 scripts/get_token.py 取得 refresh token，再建立 secret：\n  echo 'YOUR_TOKEN' | gcloud secrets create GOOGLE_REFRESH_TOKEN --data-file=- --project=$PROJECT_ID"
+fi
 
 # ── Docker 認證 ───────────────────────────────────────────────────────────────
 step "設定 Artifact Registry 認證"
@@ -72,10 +72,6 @@ docker push "$IMAGE"
 docker push "$IMAGE_LATEST"
 success "Image 推送完成"
 
-# ── 設定 GOOGLE_REDIRECT_URI（固定使用穩定的區域格式 URL）─────────────────────
-REDIRECT_URI="${STABLE_SERVICE_URL}/oauth/callback"
-info "Redirect URI: $REDIRECT_URI"
-
 # ── 部署到 Cloud Run ──────────────────────────────────────────────────────────
 step "部署到 Cloud Run"
 
@@ -87,6 +83,7 @@ SECRET_MAPPINGS=(
   "ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest"
   "GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest"
   "GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
+  "GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest"
   "ENCRYPTION_KEY=ENCRYPTION_KEY:latest"
 )
 SET_SECRETS=$(IFS=','; echo "${SECRET_MAPPINGS[*]}")
@@ -97,7 +94,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --set-secrets="$SET_SECRETS" \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_REDIRECT_URI=${REDIRECT_URI}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_CALENDAR_ID=primary" \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=10 \
@@ -111,6 +108,8 @@ success "部署完成"
 
 # ── 健康檢查 ─────────────────────────────────────────────────────────────────
 step "健康檢查"
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" --quiet)
+STABLE_SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
 sleep 3
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STABLE_SERVICE_URL}/health" || echo "000")
 if [[ "$HTTP_STATUS" == "200" ]]; then
@@ -129,9 +128,6 @@ echo -e "  Cloud Run URL:    ${BOLD}$STABLE_SERVICE_URL${RESET}"
 echo
 echo -e "  ${YELLOW}LINE Bot Webhook URL（填入 LINE Developers Console）：${RESET}"
 echo -e "  ${BOLD}${STABLE_SERVICE_URL}/webhook${RESET}"
-echo
-echo -e "  ${YELLOW}Google OAuth Redirect URI（填入 GCP OAuth 2.0 Credentials）：${RESET}"
-echo -e "  ${BOLD}$REDIRECT_URI${RESET}"
 echo
 echo -e "  Image: ${BOLD}$IMAGE${RESET}"
 echo

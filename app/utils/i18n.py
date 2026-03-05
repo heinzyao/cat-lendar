@@ -1,12 +1,5 @@
 """繁體中文訊息模板"""
 
-# OAuth
-AUTH_REQUIRED = "你尚未授權 Google 日曆，請點擊下方按鈕進行授權："
-AUTH_BUTTON_LABEL = "授權 Google 日曆"
-AUTH_SUCCESS = "Google 日曆授權成功！現在可以開始使用了 ✅\n試試看傳送「明天下午兩點開會」"
-AUTH_FAILED = "授權失敗，請稍後再試。"
-AUTH_STATE_EXPIRED = "授權連結已過期，請重新操作。"
-
 # Calendar operations
 EVENT_CREATED = "已建立行程：\n📌 {summary}\n🕐 {time}"
 EVENT_CREATED_WITH_LOCATION = "已建立行程：\n📌 {summary}\n🕐 {time}\n📍 {location}"
@@ -25,34 +18,16 @@ SELECT_PROMPT = "\n請回覆數字（如：1）"
 CLARIFICATION_NEEDED = "🤔 {message}"
 PARSE_ERROR = "抱歉，我無法理解你的指令。\n你可以試試：\n• 明天下午 3 點開會\n• 查詢本週行程\n• 刪除明天的會議"
 CALENDAR_ERROR = "操作行事曆時發生錯誤，請稍後再試。"
-TOKEN_EXPIRED = "你的 Google 授權已失效，請重新授權。"
 GENERAL_ERROR = "系統發生錯誤，請稍後再試。"
 
-# Calendar mode selection
-CHOOSE_CALENDAR_MODE = (
-    "👋 歡迎使用 Cat-Lendar！\n\n"
-    "請選擇行事曆模式：\n"
-    "1️⃣  Google Calendar（需授權 Google 帳號）\n"
-    "2️⃣  內建行事曆（無需第三方帳號，資料存於 Firestore）\n\n"
-    "請回覆 1 或 2："
-)
-CALENDAR_MODE_SET_GOOGLE = "已設定使用 Google Calendar，請點擊下方按鈕完成授權："
-CALENDAR_MODE_SET_LOCAL = "✅ 已設定使用內建行事曆，可以開始新增行程了！"
-SWITCH_CALENDAR_PROMPT = (
-    "目前模式：{current_mode}\n\n"
-    "請選擇新的行事曆模式：\n"
-    "1️⃣  Google Calendar\n"
-    "2️⃣  內建行事曆\n\n"
-    "請回覆 1 或 2："
-)
-MIGRATION_PROMPT = (
-    "是否將舊行程遷移到新行事曆？\n"
-    "1️⃣  是，遷移舊行程\n"
-    "2️⃣  否，不遷移\n\n"
-    "請回覆 1 或 2："
-)
-MIGRATION_SUCCESS = "✅ 已完成遷移，共轉移 {count} 筆行程。"
-MIGRATION_SKIPPED = "✅ 已切換到{mode}，舊行程保留不變。"
+# Reminders
+REMINDER_SET = "⏰ 已設定提醒：行程開始前 {minutes} 分鐘通知"
+REMINDER_UPDATED = "⏰ 已更新提醒設定：開始前 {minutes} 分鐘"
+REMINDER_DELETED = "🔕 已取消行程提醒"
+REMINDER_NOTIFICATION = "⏰ 提醒：{summary} 將在 {minutes} 分鐘後開始\n🕐 {time}"
+DEFAULT_REMINDER_SET = "✅ 已設定預設提醒：每個行程開始前 {minutes} 分鐘提醒"
+DEFAULT_REMINDER_CLEARED = "✅ 已關閉預設提醒"
+REMINDER_EVENT_NOT_FOUND = "找不到符合的行程，請確認行程名稱或時間。"
 
 # Help
 HELP_MESSAGE = (
@@ -74,8 +49,11 @@ HELP_MESSAGE = (
     "🗑️ 刪除行程\n"
     "・取消明天的會議\n"
     "・刪除週三下午的開會\n\n"
+    "⏰ 行程提醒\n"
+    "・明天下午 2 點開會，提前 15 分鐘提醒\n"
+    "・幫明天的開會設定 30 分鐘前提醒\n"
+    "・設定預設提醒 30 分鐘前（所有新行程自動套用）\n"
+    "・關閉預設提醒\n\n"
     "⚙️ 其他指令\n"
-    "・切換行事曆：在 Google Calendar / 內建行事曆之間切換\n"
-    "・解除授權：取消 Google 日曆連結\n"
     "・說明 / help：顯示此說明"
 )

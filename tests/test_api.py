@@ -13,7 +13,7 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test_client_id")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test_client_secret")
-os.environ.setdefault("GOOGLE_REDIRECT_URI", "https://example.com/oauth/callback")
+os.environ.setdefault("GOOGLE_REFRESH_TOKEN", "test_refresh_token")
 os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
@@ -65,20 +65,3 @@ async def test_webhook_valid_signature_empty_events(client):
         },
     )
     assert resp.status_code == 200
-
-
-async def test_oauth_callback_missing_params(client):
-    """缺少 code/state 參數 → 422"""
-    resp = await client.get("/oauth/callback")
-    assert resp.status_code == 422
-
-
-async def test_oauth_callback_invalid_state(client):
-    """state 不存在 → HTML 錯誤頁（mock Firestore）"""
-    from unittest.mock import AsyncMock, patch
-
-    # mock handle_oauth_callback 返回 state_expired 錯誤（避免連線 Firestore）
-    with patch("app.routes.oauth.handle_oauth_callback", new=AsyncMock(return_value=(None, "state_expired"))):
-        resp = await client.get("/oauth/callback?code=auth_code&state=invalid_state")
-        assert resp.status_code == 400
-        assert "text/html" in resp.headers.get("content-type", "")
