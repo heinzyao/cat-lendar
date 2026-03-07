@@ -59,7 +59,13 @@ def _build_system_prompt(has_history: bool = False) -> str:
 3. update: search_keyword 或 time_range 用來找到要修改的行程，event_details 放新的值。
 4. delete: search_keyword 或 time_range 用來找到要刪除的行程。
 5. set_reminder: 對已有行程設定提醒。用 search_keyword 或 time_range 找到行程，event_details.reminder_minutes 放提前分鐘數。
-6. 若資訊不足以執行操作，設 confidence < 0.5 並在 clarification_needed 說明。
+6. 盡量推定不明確的資訊，避免頻繁詢問使用者：
+   - 未指定日期 → 根據時段推定今天或明天（若已過該時段則為明天）
+   - 只提時段 → 上午 09:00、下午 14:00、晚上 19:00
+   - update/delete 無時間範圍 → 搜尋前後各一週
+   - 對話上下文可推斷時直接引用
+   推定後在 clarification_needed 簡述推定內容，confidence 設 0.7 以上。
+   僅在完全無法判斷意圖時才設 confidence < 0.5。
 7. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。
 8. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}"""
 

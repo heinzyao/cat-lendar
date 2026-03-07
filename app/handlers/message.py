@@ -16,6 +16,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
+    """推定內容があれば末尾に補足を付与"""
+    if intent.clarification_needed:
+        return msg + f"\n\n💡 {intent.clarification_needed}"
+    return msg
+
 # ── Main entry point ──
 
 
@@ -65,7 +71,7 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
         return
 
-    if intent.confidence < 0.5 or intent.clarification_needed:
+    if intent.confidence < 0.5:
         msg = intent.clarification_needed or i18n.PARSE_ERROR
         reply_msg = i18n.CLARIFICATION_NEEDED.format(message=msg)
         await line_messaging.reply_text(reply_token, reply_msg)
@@ -133,11 +139,9 @@ async def _handle_create(
     await line_messaging.reply_text(reply_token, msg)
 
     # 通知其他用戶
-    asyncio.create_task(
-        calendar_notify.notify_others("create", user_id, event.get("summary", ""), time_str)
-    )
+    await calendar_notify.notify_others("create", user_id, event.get("summary", ""), time_str)
 
-    return msg
+    return _with_assumption_note(msg, intent)
 
 
 async def _handle_query(
@@ -164,7 +168,7 @@ async def _handle_query(
         )
     msg = "".join(lines).strip()
     await line_messaging.reply_text(reply_token, msg)
-    return msg
+    return _with_assumption_note(msg, intent)
 
 
 async def _handle_update(
@@ -189,11 +193,9 @@ async def _handle_update(
         await line_messaging.reply_text(reply_token, msg)
 
         # 通知其他用戶
-        asyncio.create_task(
-            calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
-        )
+        await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
 
-        return msg
+        return _with_assumption_note(msg, intent)
     else:
         await _save_selection_state(user_id, "select_event_for_update", events, intent)
         return await _reply_selection(reply_token, events)
@@ -217,11 +219,9 @@ async def _handle_delete(
         await line_messaging.reply_text(reply_token, msg)
 
         # 通知其他用戶
-        asyncio.create_task(
-            calendar_notify.notify_others("delete", user_id, summary)
-        )
+        await calendar_notify.notify_others("delete", user_id, summary)
 
-        return msg
+        return _with_assumption_note(msg, intent)
     else:
         await _save_selection_state(user_id, "select_event_for_delete", events, intent)
         return await _reply_selection(reply_token, events)
@@ -265,9 +265,7 @@ async def _handle_selection(
             await line_messaging.reply_text(reply_token, msg)
 
             # 通知其他用戶
-            asyncio.create_task(
-                calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
-            )
+            await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
 
             return msg
 
@@ -278,9 +276,7 @@ async def _handle_selection(
             await line_messaging.reply_text(reply_token, msg)
 
             # 通知其他用戶
-            asyncio.create_task(
-                calendar_notify.notify_others("delete", user_id, summary)
-            )
+            await calendar_notify.notify_others("delete", user_id, summary)
 
             return msg
     except Exception:
@@ -427,4 +423,4 @@ async def _handle_set_reminder(
         msg = i18n.REMINDER_SET.format(minutes=reminder_minutes)
 
     await line_messaging.reply_text(reply_token, msg)
-    return msg
+    return _with_assumption_note(msg, intent)

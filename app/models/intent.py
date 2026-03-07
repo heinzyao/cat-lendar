@@ -39,6 +39,6 @@ class CalendarIntent(BaseModel):
     )
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     clarification_needed: str | None = Field(
-        default=None, description="需要使用者澄清時的提示訊息"
+        default=None, description="對使用者的補充說明（推定內容、建議確認事項等）"
     )
     original_message: str | None = None  # 供 update 二次解析用

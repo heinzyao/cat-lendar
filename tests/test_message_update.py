@@ -72,11 +72,13 @@ async def test_handle_update_single_event_uses_parse_update_details():
         patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
+        patch("app.handlers.message.calendar_notify") as mock_notify,
     ):
         mock_cal.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
         mock_nlp.parse_update_details = AsyncMock(return_value=refined)
         mock_cal.update_event = AsyncMock(return_value=_UPDATED_EVENT)
         mock_msg.reply_text = AsyncMock()
+        mock_notify.notify_others = AsyncMock()
 
         await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
@@ -100,11 +102,13 @@ async def test_handle_update_single_event_fallback_to_event_details():
         patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
+        patch("app.handlers.message.calendar_notify") as mock_notify,
     ):
         mock_cal.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
         mock_nlp.parse_update_details = AsyncMock(return_value=None)
         mock_cal.update_event = AsyncMock(return_value=_UPDATED_EVENT)
         mock_msg.reply_text = AsyncMock()
+        mock_notify.notify_others = AsyncMock()
 
         await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
@@ -143,11 +147,13 @@ async def test_handle_selection_update_uses_parse_update_details():
         patch("app.handlers.message.calendar") as mock_cal,
         patch("app.handlers.message.nlp") as mock_nlp,
         patch("app.handlers.message.line_messaging") as mock_msg,
+        patch("app.handlers.message.calendar_notify") as mock_notify,
     ):
         mock_store.delete_user_state = AsyncMock()
         mock_nlp.parse_update_details = AsyncMock(return_value=refined)
         mock_cal.update_event = AsyncMock(return_value={**selected, "summary": "改名後的週會"})
         mock_msg.reply_text = AsyncMock()
+        mock_notify.notify_others = AsyncMock()
 
         await _handle_selection(_USER, _REPLY_TOKEN, "1", user_state, _MOCK_CREDS)
 
@@ -158,3 +164,32 @@ async def test_handle_selection_update_uses_parse_update_details():
             _MOCK_CREDS, "evt001", refined, line_user_id=_USER
         )
         mock_msg.reply_text.assert_awaited_once()
+
+
+# ── assumption note 附加在回覆訊息末尾 ──
+
+
+@pytest.mark.asyncio
+async def test_handle_update_appends_assumption_note():
+    intent = _make_intent()
+    intent.clarification_needed = "已推定為今天的週會"
+    refined = EventDetails(
+        start_time=datetime(2024, 3, 16, 10, 0, tzinfo=timezone.utc),
+        end_time=datetime(2024, 3, 16, 11, 0, tzinfo=timezone.utc),
+    )
+
+    with (
+        patch("app.handlers.message.calendar") as mock_cal,
+        patch("app.handlers.message.nlp") as mock_nlp,
+        patch("app.handlers.message.line_messaging") as mock_msg,
+        patch("app.handlers.message.calendar_notify") as mock_notify,
+    ):
+        mock_cal.query_events = AsyncMock(return_value=[_SAMPLE_EVENT])
+        mock_nlp.parse_update_details = AsyncMock(return_value=refined)
+        mock_cal.update_event = AsyncMock(return_value=_UPDATED_EVENT)
+        mock_msg.reply_text = AsyncMock()
+        mock_notify.notify_others = AsyncMock()
+
+        result = await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
+
+        assert "\n\n💡 已推定為今天的週會" in result
