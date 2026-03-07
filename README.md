@@ -206,7 +206,7 @@ uv run python -m pytest tests/ -q
 | 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | 區域 | `asia-east1` |
-| 最新 Revision | `line-calendar-bot-00018-g7v` |
+| 最新 Revision | `line-calendar-bot-00019-2f6` |
 
 ## License
 
