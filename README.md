@@ -134,7 +134,7 @@ cat-lendar/
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
 │   └── update_secret.sh        # 更新 Secret Manager 密鑰
-├── tests/                      # 64 個測試，asyncio_mode=auto
+├── tests/                      # 65 個測試，asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # 完整部署指南
@@ -180,7 +180,7 @@ cat-lendar/
 uv run python -m pytest tests/ -q
 ```
 
-共 64 個測試，涵蓋：
+共 65 個測試，涵蓋：
 
 | 測試檔案 | 涵蓋範圍 |
 |---------|---------|
@@ -202,7 +202,7 @@ uv run python -m pytest tests/ -q
 | 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | 區域 | `asia-east1` |
-| 最新 Revision | `line-calendar-bot-00016-qkw` |
+| 最新 Revision | `line-calendar-bot-00017-bcm` |
 
 ## License
 

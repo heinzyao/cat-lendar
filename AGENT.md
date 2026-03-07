@@ -13,8 +13,8 @@
 | 語言 | Python 3.12（Docker）／Python 3.14（本地開發） |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
-| 最新 Revision | `line-calendar-bot-00016-qkw` |
-| 測試數量 | 64 個（`uv run python -m pytest tests/ -q`） |
+| 最新 Revision | `line-calendar-bot-00017-bcm` |
+| 測試數量 | 65 個（`uv run python -m pytest tests/ -q`） |
 
 ---
 
@@ -52,7 +52,7 @@ scripts/
 ├── deploy.sh                 # 建置 + 推送 + 部署到 Cloud Run
 ├── dev.sh                    # 本地開發（uvicorn + ngrok）
 └── update_secret.sh          # 更新 Secret Manager 密鑰
-tests/                        # 64 個測試，asyncio_mode=auto
+tests/                        # 65 個測試，asyncio_mode=auto
 ```
 
 ---
@@ -196,6 +196,8 @@ user_prefs/{line_user_id}
 - [x] 預設提醒設定（每個新行程自動套用）
 - [x] description 欄位附加操作者 LINE ID `[LINE: {user_id}]`
 - [x] 跨用戶異動通知（新增／修改／刪除後推播給其他所有用戶）
+- [x] NLP 推定模式：模糊指令自動推定合理預設值，減少反覆詢問
+- [x] 跨用戶通知修復：改為 await 同步執行，避免 Cloud Run CPU throttling
 
 ---
 

@@ -115,7 +115,7 @@ async def test_notify_update_message_format():
 
 @pytest.mark.asyncio
 async def test_notify_delete_message_format():
-    """DELETE 通知訊息應包含「刪除」且不含時間"""
+    """DELETE 通知訊息應包含「取消」且不含時間"""
     with (
         patch("app.services.calendar_notify.store") as mock_store,
         patch("app.services.calendar_notify.line_messaging") as mock_line,
@@ -127,7 +127,7 @@ async def test_notify_delete_message_format():
         await notify_others("delete", _ACTOR, "週會")
 
         msg = mock_line.push_text.call_args[0][1]
-        assert "刪除" in msg
+        assert "取消" in msg
         assert "Carol" in msg
         assert "週會" in msg
 
