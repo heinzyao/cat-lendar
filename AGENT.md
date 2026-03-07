@@ -13,7 +13,7 @@
 | 語言 | Python 3.12（Docker）／Python 3.14（本地開發） |
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
-| 最新 Revision | `line-calendar-bot-00017-bcm` |
+| 最新 Revision | `line-calendar-bot-00018-g7v` |
 | 測試數量 | 65 個（`uv run python -m pytest tests/ -q`） |
 
 ---
