@@ -14,6 +14,7 @@
 - **跨用戶通知**：任何人新增／修改／刪除行程時，自動推播通知其他用戶
 - **對話記憶**：多輪對話上下文理解，支援代名詞與省略句
 
+- **通知設定**：「關閉通知」「開啟通知」——自由開關行程異動通知
 ## 系統架構
 
 **共享行事曆模式**：App owner 預先完成一次 OAuth 授權，所有用戶共用同一個 Google Calendar，無需個別登入。
@@ -134,7 +135,7 @@ cat-lendar/
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
 │   └── update_secret.sh        # 更新 Secret Manager 密鑰
-├── tests/                      # 65 個測試，asyncio_mode=auto
+├── tests/                      # 67 個測試，asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # 完整部署指南
@@ -168,6 +169,9 @@ cat-lendar/
 「設定預設提醒 30 分鐘前」
 「關閉預設提醒」
 
+通知設定
+「關閉通知」      → 不再接收其他人的行程異動通知
+「開啟通知」      → 恢復接收異動通知（預設為開啟）
 其他
 「說明」或「help」  → 顯示功能說明
 ```
@@ -180,7 +184,7 @@ cat-lendar/
 uv run python -m pytest tests/ -q
 ```
 
-共 65 個測試，涵蓋：
+共 67 個測試，涵蓋：
 
 | 測試檔案 | 涵蓋範圍 |
 |---------|---------|

@@ -225,3 +225,21 @@ async def set_default_reminder_minutes(line_user_id: str, minutes: int | None) -
     await get_db().collection("user_prefs").document(line_user_id).set(
         {"default_reminder_minutes": minutes, "updated_at": now}, merge=True
     )
+
+
+# ── Notification preferences ──
+
+
+async def get_notify_enabled(line_user_id: str) -> bool:
+    """取得用戶的異動通知開關，預設為 True（未設定也視為開啟）"""
+    doc = await get_db().collection("user_prefs").document(line_user_id).get()
+    if not doc.exists:
+        return True
+    return doc.to_dict().get("notify_on_change", True)
+
+
+async def set_notify_enabled(line_user_id: str, enabled: bool) -> None:
+    now = datetime.now(timezone.utc)
+    await get_db().collection("user_prefs").document(line_user_id).set(
+        {"notify_on_change": enabled, "updated_at": now}, merge=True
+    )

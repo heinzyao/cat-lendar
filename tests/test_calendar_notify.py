@@ -29,6 +29,7 @@ async def test_notify_others_sends_to_all_except_actor():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1, _OTHER2])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value="小明")
         mock_line.push_text = AsyncMock()
 
@@ -65,6 +66,7 @@ async def test_notify_others_fallback_display_name():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value=None)
         mock_line.push_text = AsyncMock()
 
@@ -83,6 +85,7 @@ async def test_notify_create_message_format():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value="Alice")
         mock_line.push_text = AsyncMock()
 
@@ -103,6 +106,7 @@ async def test_notify_update_message_format():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value="Bob")
         mock_line.push_text = AsyncMock()
 
@@ -121,6 +125,7 @@ async def test_notify_delete_message_format():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value="Carol")
         mock_line.push_text = AsyncMock()
 
@@ -140,6 +145,7 @@ async def test_notify_push_failure_does_not_crash():
         patch("app.services.calendar_notify.line_messaging") as mock_line,
     ):
         mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1, _OTHER2])
+        mock_store.get_notify_enabled = AsyncMock(return_value=True)
         mock_line.get_display_name = AsyncMock(return_value="Dave")
         mock_line.push_text = AsyncMock(
             side_effect=[Exception("push failed"), None]
@@ -150,3 +156,39 @@ async def test_notify_push_failure_does_not_crash():
 
         # 兩個 push 都應嘗試（即使第一個失敗）
         assert mock_line.push_text.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_notify_others_skips_disabled_users():
+    """關閉通知的用戶不應收到推播"""
+    with (
+        patch("app.services.calendar_notify.store") as mock_store,
+        patch("app.services.calendar_notify.line_messaging") as mock_line,
+    ):
+        mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1, _OTHER2])
+        # OTHER1 關閉通知，OTHER2 開啟
+        mock_store.get_notify_enabled = AsyncMock(side_effect=[False, True])
+        mock_line.get_display_name = AsyncMock(return_value="小明")
+        mock_line.push_text = AsyncMock()
+
+        await notify_others("create", _ACTOR, "週會", "03/20 10:00")
+
+        mock_line.push_text.assert_awaited_once()
+        assert mock_line.push_text.call_args[0][0] == _OTHER2
+
+
+@pytest.mark.asyncio
+async def test_notify_others_all_disabled_no_push():
+    """所有用戶都關閉通知時不應推播"""
+    with (
+        patch("app.services.calendar_notify.store") as mock_store,
+        patch("app.services.calendar_notify.line_messaging") as mock_line,
+    ):
+        mock_store.get_all_user_ids = AsyncMock(return_value=[_ACTOR, _OTHER1, _OTHER2])
+        mock_store.get_notify_enabled = AsyncMock(return_value=False)
+        mock_line.get_display_name = AsyncMock(return_value="小明")
+        mock_line.push_text = AsyncMock()
+
+        await notify_others("create", _ACTOR, "週會", "03/20 10:00")
+
+        mock_line.push_text.assert_not_called()

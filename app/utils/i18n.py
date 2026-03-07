@@ -25,6 +25,9 @@ NOTIFY_EVENT_CREATED = "📅 {name} 在日曆上新增了活動呦：\n📌 {sum
 NOTIFY_EVENT_UPDATED = "✏️ {name} 修改了一下行程：\n📌 {summary}\n🕐 {time}"
 NOTIFY_EVENT_DELETED = "🗑️ {name} 取消了這個行程：\n📌 {summary}"
 
+# Notification preferences
+NOTIFY_ENABLED = "✅ 已開啟行事曆異動通知，其他人新增、修改、刪除行程時會通知你喔！"
+NOTIFY_DISABLED = "🔕 已關閉行事曆異動通知，之後不會再推播其他人的行程變動了。"
 # Reminders
 REMINDER_SET = "⏰ 沒問題！會在 {minutes} 分鐘前提醒你喔。"
 REMINDER_UPDATED = "⏰ 已更新提醒設定：開始前 {minutes} 分鐘"
@@ -55,5 +58,8 @@ HELP_MESSAGE = (
     "・『幫明天的開會設定 30 分鐘前提醒』\n"
     "・『設定預設提醒 30 分鐘前』（以後每個新行程都會自動設好）\n"
     "・『關閉預設提醒』\n\n"
+    "\n⚙️ 通知設定\n"
+    "・『關閉通知』（不再接收其他人的行程變動推播）\n"
+    "・『開啟通知』（恢復接收）\n\n"
     "如果有什麼不懂的，隨時打『說明』或『help』叫我出來呦！"
 )

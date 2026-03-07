@@ -26,6 +26,14 @@ async def notify_others(
         if not others:
             return
 
+        # 過濾掉關閉通知的用戶
+        notify_checks = await asyncio.gather(
+            *[store.get_notify_enabled(uid) for uid in others]
+        )
+        others = [uid for uid, enabled in zip(others, notify_checks) if enabled]
+        if not others:
+            return
+
         display_name = await line_messaging.get_display_name(actor_user_id)
         if not display_name:
             display_name = f"用戶 ...{actor_user_id[-4:]}"

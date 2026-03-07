@@ -14,7 +14,7 @@
 | 套件管理 | uv |
 | 部署 | Google Cloud Run (`asia-east1`) |
 | 最新 Revision | `line-calendar-bot-00018-g7v` |
-| 測試數量 | 65 個（`uv run python -m pytest tests/ -q`） |
+| 測試數量 | 67 個（`uv run python -m pytest tests/ -q`） |
 
 ---
 
@@ -52,7 +52,7 @@ scripts/
 ├── deploy.sh                 # 建置 + 推送 + 部署到 Cloud Run
 ├── dev.sh                    # 本地開發（uvicorn + ngrok）
 └── update_secret.sh          # 更新 Secret Manager 密鑰
-tests/                        # 65 個測試，asyncio_mode=auto
+tests/                        # 67 個測試，asyncio_mode=auto
 ```
 
 ---
@@ -78,6 +78,7 @@ reminders/{reminder_id}
 
 user_prefs/{line_user_id}
   default_reminder_minutes: int | null
+  notify_on_change: bool              ← 預設 True（未設定時視為開啟）
   updated_at
 ```
 
@@ -199,10 +200,11 @@ user_prefs/{line_user_id}
 - [x] NLP 推定模式：模糊指令自動推定合理預設值，減少反覆詢問
 - [x] 跨用戶通知修復：改為 await 同步執行，避免 Cloud Run CPU throttling
 
+- [x] 通知訂閱設定：用戶可開關接收異動通知（「開啟通知」/「關閉通知」）
+- [x] 時間格式加年份：所有行程顯示改為 YYYY/MM/DD 格式
 ---
 
 ## 擴充方向（待辦）
 
 - [ ] 支援 recurring events（每週定期行程）
 - [ ] 使用量統計（每日 Claude API 呼叫次數）
-- [ ] 通知訂閱設定（用戶可選擇開關接收異動通知）

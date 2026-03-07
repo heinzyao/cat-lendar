@@ -49,7 +49,7 @@ def test_format_event_time_same_day():
         "2024-03-15T14:00:00+08:00",
         "2024-03-15T16:00:00+08:00",
     )
-    assert "03/15" in result
+    assert "2024/03/15" in result
     assert "14:00" in result
     assert "16:00" in result
 
@@ -59,15 +59,15 @@ def test_format_event_time_cross_day():
         "2024-03-15T22:00:00+08:00",
         "2024-03-16T02:00:00+08:00",
     )
-    assert "03/15" in result
-    assert "03/16" in result
+    assert "2024/03/15" in result
+    assert "2024/03/16" in result
 
 
 def test_format_event_time_all_day():
     # Python 3.11+ fromisoformat 能解析純日期，會格式化為 00:00 的 datetime
     result = format_event_time("2024-03-15", "2024-03-16")
-    # 驗證包含日期資訊（03/15 格式）
-    assert "03/15" in result
+    # 驗證包含日期資訊（全天事件直接回傳原始字串）
+    assert "2024/03/15" in result
 
 
 @pytest.mark.parametrize("weekday,expected", [

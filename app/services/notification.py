@@ -15,7 +15,7 @@ def format_reminder_message(
 ) -> str:
     tz = local_tz()
     local_start = start_time.astimezone(tz)
-    time_str = local_start.strftime("%m/%d %H:%M")
+    time_str = local_start.strftime("%Y/%m/%d %H:%M")
     return (
         f"⏰ 提醒：{event_summary} 將在 {reminder_minutes} 分鐘後開始\n"
         f"🕐 {time_str}"

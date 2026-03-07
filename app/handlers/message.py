@@ -46,6 +46,16 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await line_messaging.reply_text(reply_token, i18n.DEFAULT_REMINDER_CLEARED)
         return
 
+    if text in ("關閉通知", "取消通知"):
+        await store.set_notify_enabled(user_id, False)
+        await line_messaging.reply_text(reply_token, i18n.NOTIFY_DISABLED)
+        return
+
+    if text in ("開啟通知", "恢復通知"):
+        await store.set_notify_enabled(user_id, True)
+        await line_messaging.reply_text(reply_token, i18n.NOTIFY_ENABLED)
+        return
+
     # 取得共享憑證
     credentials = auth.get_shared_credentials()
 

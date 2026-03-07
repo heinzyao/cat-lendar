@@ -47,8 +47,8 @@ def format_event_time(start: str, end: str) -> str:
         e_local = e.astimezone(_tz)
 
         if s_local.date() == e_local.date():
-            return f"{s_local:%m/%d(%a) %H:%M}–{e_local:%H:%M}"
-        return f"{s_local:%m/%d(%a) %H:%M} – {e_local:%m/%d(%a) %H:%M}"
+            return f"{s_local:%Y/%m/%d(%a) %H:%M}–{e_local:%H:%M}"
+        return f"{s_local:%Y/%m/%d(%a) %H:%M} – {e_local:%Y/%m/%d(%a) %H:%M}"
     except (ValueError, TypeError):
         # 全天事件: date 格式
         return f"{start} – {end}" if start != end else start
