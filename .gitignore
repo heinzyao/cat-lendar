@@ -50,3 +50,6 @@ gcloud-service-key.json
 # Secrets (never commit these)
 *secret*
 *credential*
+
+# Deployment docs (contains infra details)
+DEPLOYMENT.md
