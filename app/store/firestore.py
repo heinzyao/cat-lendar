@@ -1,3 +1,31 @@
+"""Firestore 資料庫操作層：使用者狀態、對話記憶、行程提醒的持久化儲存。
+
+設計理由——為何選 Firestore？
+- Cloud Run 是無狀態（stateless）容器，每個請求可能落在不同的實例
+  若用記憶體儲存對話記憶/選擇狀態，不同實例間無法共享 → 必須用外部儲存
+- Firestore 提供即時一致性、自動 TTL（expires_at 手動檢查）、原生非同步 SDK
+- 與 GCP 生態系（Cloud Run、Cloud Scheduler）無縫整合，不需額外設定
+
+資料集合設計
+-----------
+┌──────────────────┬────────────────────────────────────────────────┐
+│ 集合名稱          │ 用途                                            │
+├──────────────────┼────────────────────────────────────────────────┤
+│ users            │ 已互動用戶登記（first_seen, last_seen）          │
+│ user_states      │ 多筆行程選擇的中間狀態（帶 expires_at TTL）      │
+│ conversation_history│ 近期對話記憶（供 Claude 多輪理解上下文）      │
+│ reminders        │ 行程提醒記錄（reminder_at <= now 時推播）        │
+│ user_prefs       │ 使用者偏好（預設提醒分鐘數、通知開關）           │
+└──────────────────┴────────────────────────────────────────────────┘
+
+TTL 策略（手動實作，Firestore 無內建 TTL）：
+- user_states：expires_at 欄位，get 時檢查是否過期並刪除
+- conversation_history：updated_at + conversation_history_ttl_seconds，get 時檢查
+
+Singleton Client 設計：
+_db 全局唯一，避免重複建立 gRPC 連線（AsyncClient 內部維護連線池）
+"""
+
 from __future__ import annotations
 
 import logging
@@ -10,10 +38,17 @@ from app.models.user import ConversationMessage, UserState
 
 logger = logging.getLogger(__name__)
 
+# Singleton Firestore 客戶端：延遲初始化，首次呼叫 get_db() 時建立
 _db: AsyncClient | None = None
 
 
 def get_db() -> AsyncClient:
+    """取得或建立 Firestore 非同步客戶端（Singleton 模式）。
+
+    設計理由：
+    - 延遲初始化確保模組載入時不需要 GCP 憑證（方便本機測試 mock）
+    - project=None 時使用 GOOGLE_CLOUD_PROJECT 環境變數或 ADC 預設專案
+    """
     global _db
     if _db is None:
         _db = AsyncClient(project=settings.gcp_project_id or None)

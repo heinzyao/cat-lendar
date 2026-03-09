@@ -1,3 +1,26 @@
+"""NLP 服務模組：使用 Claude API 將自然語言訊息解析為結構化日曆操作意圖。
+
+設計理由
+--------
+為什麼選用 Claude 而非規則解析？
+- 自然語言日程輸入極為多變：「後天下午開會」、「把三點的會議推到四點」、
+  「下週四午餐約會改成週五」等，規則窮舉不切實際
+- Claude 支援 multi-turn 對話，可利用前幾輪的脈絡理解代名詞與省略
+- 直接輸出 JSON，省去 NLP → structured data 的中間層
+
+Prompt 設計策略
+---------------
+1. 系統 Prompt 注入當前時間與時區：讓 Claude 能正確推算「明天」「這週」等相對時間
+2. 嚴格要求只輸出 JSON：避免 Claude 在 JSON 前後加說明文字（雖有 markdown fence 處理）
+3. 推定規則：要求 Claude 盡量推定不明確的資訊，僅在真正無法判斷時才要求澄清，
+   以降低使用者操作成本
+4. 二階段解析：update 操作先用 parse_intent() 定位行程，再用 parse_update_details()
+   結合原始行程資料精確計算時間差異（如「延後 30 分鐘」需知道原始時間）
+
+Singleton Client 設計：
+_client 全局唯一，避免每次請求都建立新的 HTTP 連線（AsyncAnthropic 內部維護連線池）
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,10 +35,13 @@ from app.utils.datetime_utils import now_local, weekday_name
 
 logger = logging.getLogger(__name__)
 
+# Singleton 模式：延遲初始化，首次呼叫時才建立客戶端
+# 設計理由：避免在模組載入時就連線（減少啟動時間，也避免啟動時憑證未就緒的問題）
 _client: anthropic.AsyncAnthropic | None = None
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
+    """取得或建立 Anthropic 非同步客戶端（Singleton 模式）。"""
     global _client
     if _client is None:
         _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -23,9 +49,18 @@ def _get_client() -> anthropic.AsyncAnthropic:
 
 
 def _build_system_prompt(has_history: bool = False) -> str:
+    """建構系統 Prompt。
+
+    設計理由：
+    - 注入當前時間：Claude 無法自行取得當前時間，必須由我們傳入才能正確處理「明天」等相對時間
+    - has_history：有對話記憶時追加 history_note，提醒 Claude 善用上下文
+      （無記憶時省略，避免讓 Claude 誤以為有記憶卻找不到）
+    - 動態建構而非靜態常數：因需嵌入每次呼叫時的即時時間，無法預先建構
+    """
     now = now_local()
     history_note = ""
     if has_history:
+        # 當有對話記憶時，提醒 Claude 利用先前對話理解代名詞與省略
         history_note = "\n\n注意：對話歷史已提供在先前的 messages 中。請參考對話上下文來理解代名詞（如「它」「那個」）、省略（如「改到明天」指的是前面提到的行程）、以及後續補充資訊（如追加地點、修改時間）。"
     return f"""你是一個 Google 日曆助手，負責解析使用者的自然語言指令並轉換為結構化操作。
 
@@ -74,9 +109,26 @@ async def parse_intent(
     user_message: str,
     conversation_history: list[ConversationMessage] | None = None,
 ) -> CalendarIntent:
+    """呼叫 Claude API 解析使用者訊息，回傳結構化的 CalendarIntent。
+
+    Multi-turn 設計：
+    - conversation_history 會以 messages 形式傳入，讓 Claude 知道前幾輪的對話內容
+    - 當前訊息永遠以 role=user 附加在最後
+    - system prompt 根據是否有記憶來調整提示策略
+
+    錯誤處理策略：
+    - Claude 有時會在 JSON 前後加入 markdown code fence（```json ... ```），
+      需手動剝除，否則 json.loads() 會失敗
+    - JSON 解析失敗時回傳 action=unknown + confidence=0，觸發上層的澄清詢問流程
+    - 不直接 raise 例外，確保每個使用者訊息都有合理的回應
+
+    original_message 保存策略：
+    - 透過 model_copy() 附加，而非在 Prompt 中要求 Claude 回傳
+    - 供 update 操作的 parse_update_details() 二次解析使用
+    """
     client = _get_client()
 
-    # 組裝 multi-turn messages
+    # 組裝 multi-turn messages：先放歷史對話，再加上本輪使用者訊息
     messages: list[dict[str, str]] = []
     if conversation_history:
         for msg in conversation_history:
@@ -85,13 +137,14 @@ async def parse_intent(
 
     response = await client.messages.create(
         model=settings.claude_model,
-        max_tokens=1024,
+        max_tokens=1024,  # 日曆 JSON 通常 < 300 tokens，1024 已足夠且避免截斷
         system=_build_system_prompt(has_history=bool(conversation_history)),
         messages=messages,
     )
 
     raw = response.content[0].text.strip()
-    # 去掉可能的 markdown code fence
+    # 去掉可能的 markdown code fence（```json ... ``` 或 ``` ... ```）
+    # 設計理由：即使 Prompt 要求只輸出 JSON，Claude 有時仍會加入 code fence
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
         if raw.endswith("```"):
@@ -102,6 +155,7 @@ async def parse_intent(
         data = json.loads(raw)
     except json.JSONDecodeError:
         logger.error("Claude 回傳非 JSON: %s", raw)
+        # 回傳 unknown 意圖，讓上層顯示「無法解析」訊息，而非讓系統拋出 500 錯誤
         return CalendarIntent(
             action="unknown",
             confidence=0.0,
@@ -109,6 +163,7 @@ async def parse_intent(
         )
 
     intent = CalendarIntent.model_validate(data)
+    # 保存原始訊息供 update 操作的二次精細解析（parse_update_details）使用
     return intent.model_copy(update={"original_message": user_message})
 
 
@@ -153,7 +208,21 @@ def _format_event_for_prompt(event: dict) -> str:
 async def parse_update_details(
     user_message: str, original_event: dict
 ) -> EventDetails | None:
-    """第二階段解析：結合原事件資訊，精確計算需更新的欄位"""
+    """第二階段解析（Update 操作專用）：結合原事件資訊，精確計算需更新的欄位。
+
+    設計理由——為何需要二階段？
+    第一階段 parse_intent() 只看使用者訊息，不知道原行程的時間細節，
+    所以無法處理「延後 30 分鐘」（需知道原始時間才能算出新時間）。
+    第二階段取得原行程後，將事件細節注入 Prompt，讓 Claude 直接計算正確的時間值。
+
+    例如：
+      使用者說「把三點的會議延後一小時」
+      原行程：start=15:00, end=16:00
+      第二階段結果：start=16:00, end=17:00（保持持續時間不變）
+
+    輸入 original_event：Google Calendar API 回傳的 dict 格式
+    輸出 EventDetails：只含需要更新的欄位（未變動的欄位為 None）
+    """
     if not user_message:
         return None
 
@@ -161,6 +230,7 @@ async def parse_update_details(
     now = now_local()
     event_info = _format_event_for_prompt(original_event)
 
+    # 與第一階段不同：system prompt 包含原始行程資訊，讓 Claude 知道基準時間
     system_prompt = f"""你是一個日曆助手，負責解析使用者想如何修改一個已知的行程。
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
