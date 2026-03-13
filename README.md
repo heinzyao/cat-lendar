@@ -69,6 +69,11 @@ bash scripts/dev.sh
 ### 部署到 Google Cloud
 
 ```bash
+# 不需本地 Docker，使用 Cloud Build 在雲端建置
+gcloud builds submit --region=asia-east1 \
+  --tag asia-east1-docker.pkg.dev/<PROJECT_ID>/line-bot/line-calendar-bot:$(git rev-parse --short HEAD) .
+
+# 或使用本地 Docker
 bash scripts/deploy.sh
 ```
 
@@ -207,7 +212,7 @@ uv run python -m pytest tests/ -q
 | 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | 區域 | `asia-east1` |
-| 最新 Revision | `line-calendar-bot-00019-2f6` |
+| 最新 Revision | `line-calendar-bot-00021-5x9` |
 
 ## License
 
