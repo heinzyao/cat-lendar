@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections import defaultdict
 
 import anthropic
 
@@ -46,6 +48,45 @@ def _get_client() -> anthropic.AsyncAnthropic:
     if _client is None:
         _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     return _client
+
+
+# --- Per-user Rate Limiter ---
+# 設計理由：防止惡意或異常的連續訊息消耗大量 Claude API 費用。
+# 使用 sliding window 演算法，每位使用者每分鐘最多 10 次呼叫。
+# Cloud Run 為 stateless 但單一 instance 可處理多個 concurrent request，
+# 此 in-memory limiter 足以防止單一 instance 上的濫用。
+
+_RATE_LIMIT_MAX_CALLS = 10  # 每個 window 最大呼叫次數
+_RATE_LIMIT_WINDOW_SECONDS = 60  # 滑動視窗長度
+
+_user_call_timestamps: dict[str, list[float]] = defaultdict(list)
+
+
+class RateLimitExceeded(Exception):
+    """使用者超過 API 呼叫頻率限制。"""
+    pass
+
+
+def _check_rate_limit(user_id: str) -> None:
+    """檢查使用者是否超過頻率限制，超過則拋出 RateLimitExceeded。"""
+    now = time.monotonic()
+    window_start = now - _RATE_LIMIT_WINDOW_SECONDS
+
+    # 清除過期的 timestamp
+    timestamps = _user_call_timestamps[user_id]
+    _user_call_timestamps[user_id] = [t for t in timestamps if t > window_start]
+    timestamps = _user_call_timestamps[user_id]
+
+    if len(timestamps) >= _RATE_LIMIT_MAX_CALLS:
+        logger.warning(
+            "Rate limit exceeded for user %s: %d calls in %ds",
+            user_id[-4:], len(timestamps), _RATE_LIMIT_WINDOW_SECONDS,
+        )
+        raise RateLimitExceeded(
+            f"已超過使用頻率限制（每分鐘最多 {_RATE_LIMIT_MAX_CALLS} 次），請稍後再試。"
+        )
+
+    timestamps.append(now)
 
 
 def _build_system_prompt(has_history: bool = False) -> str:
@@ -108,6 +149,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
 async def parse_intent(
     user_message: str,
     conversation_history: list[ConversationMessage] | None = None,
+    user_id: str = "",
 ) -> CalendarIntent:
     """呼叫 Claude API 解析使用者訊息，回傳結構化的 CalendarIntent。
 
@@ -125,7 +167,13 @@ async def parse_intent(
     original_message 保存策略：
     - 透過 model_copy() 附加，而非在 Prompt 中要求 Claude 回傳
     - 供 update 操作的 parse_update_details() 二次解析使用
+
+    Rate limiting：
+    - 每位使用者每分鐘最多 10 次呼叫，超過時拋出 RateLimitExceeded
     """
+    if user_id:
+        _check_rate_limit(user_id)
+
     client = _get_client()
 
     # 組裝 multi-turn messages：先放歷史對話，再加上本輪使用者訊息
@@ -206,7 +254,7 @@ def _format_event_for_prompt(event: dict) -> str:
 
 
 async def parse_update_details(
-    user_message: str, original_event: dict
+    user_message: str, original_event: dict, user_id: str = ""
 ) -> EventDetails | None:
     """第二階段解析（Update 操作專用）：結合原事件資訊，精確計算需更新的欄位。
 
@@ -225,6 +273,9 @@ async def parse_update_details(
     """
     if not user_message:
         return None
+
+    if user_id:
+        _check_rate_limit(user_id)
 
     client = _get_client()
     now = now_local()

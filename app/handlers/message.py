@@ -50,6 +50,7 @@ from datetime import datetime, timedelta, timezone
 from app.models.intent import ActionType, CalendarIntent, EventDetails, TimeRange
 from app.models.user import UserState
 from app.services import auth, calendar, calendar_notify, line_messaging, nlp
+from app.services.nlp import RateLimitExceeded
 from app.store import firestore as store
 from app.utils import i18n
 from app.config import settings
@@ -138,7 +139,10 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
 
     # 呼叫 Claude API 解析自然語言意圖
     try:
-        intent = await nlp.parse_intent(text, conversation_history)
+        intent = await nlp.parse_intent(text, conversation_history, user_id=user_id)
+    except RateLimitExceeded as e:
+        await line_messaging.reply_text(reply_token, str(e))
+        return
     except Exception:
         logger.exception("NLP parse failed")
         await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
@@ -291,7 +295,7 @@ async def _handle_update(
         # 二次解析：將原始行程資料傳給 Claude，讓它精確計算需更新的欄位
         update_details = None
         if intent.original_message:
-            update_details = await nlp.parse_update_details(intent.original_message, events[0])
+            update_details = await nlp.parse_update_details(intent.original_message, events[0], user_id=user_id)
         # 降級 fallback：二次解析失敗時使用第一階段的結果
         details_to_use = update_details or intent.event_details
         updated = await calendar.update_event(credentials, events[0]["id"], details_to_use, line_user_id=user_id)
@@ -377,7 +381,7 @@ async def _handle_selection(
             intent = CalendarIntent.model_validate(user_state.original_intent)
             update_details = None
             if intent.original_message:
-                update_details = await nlp.parse_update_details(intent.original_message, selected)
+                update_details = await nlp.parse_update_details(intent.original_message, selected, user_id=user_id)
             details_to_use = update_details or intent.event_details
             updated = await calendar.update_event(credentials, selected["id"], details_to_use, line_user_id=user_id)
             time_str = _get_event_time_str(updated)
