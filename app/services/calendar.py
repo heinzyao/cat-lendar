@@ -31,6 +31,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -74,7 +75,7 @@ async def create_event(
     details: EventDetails,
     line_user_id: str | None = None,
     reminder_minutes: int | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """在 Google Calendar 建立新行程，並在 Firestore 建立對應的提醒記錄。
 
     全天事件 vs 定時事件：
@@ -92,7 +93,10 @@ async def create_event(
     """
     service = _get_service(credentials)
 
-    body: dict = {"summary": details.summary}
+    body: dict[str, Any] = {"summary": details.summary}
+
+    if details.start_time is None:
+        raise ValueError("create_event requires start_time")
 
     # 全天事件使用 date 格式，定時事件使用 dateTime 格式
     if details.all_day:
@@ -101,7 +105,10 @@ async def create_event(
         body["end"] = {"date": to_date_str(end)}
     else:
         body["start"] = {"dateTime": to_rfc3339(details.start_time)}
-        body["end"] = {"dateTime": to_rfc3339(details.end_time)}
+        end_time = details.end_time
+        if end_time is None:
+            end_time = details.start_time + timedelta(hours=1)
+        body["end"] = {"dateTime": to_rfc3339(end_time)}
 
     if details.location:
         body["location"] = details.location
@@ -114,7 +121,9 @@ async def create_event(
         body["description"] = desc
 
     # effective_minutes：合併兩個來源的提醒設定
-    effective_minutes = reminder_minutes if reminder_minutes is not None else details.reminder_minutes
+    effective_minutes = (
+        reminder_minutes if reminder_minutes is not None else details.reminder_minutes
+    )
     if effective_minutes is not None:
         # 覆蓋 Google Calendar 預設提醒，使用 popup 方式
         body["reminders"] = {
@@ -122,23 +131,30 @@ async def create_event(
             "overrides": [{"method": "popup", "minutes": effective_minutes}],
         }
 
-    event = service.events().insert(calendarId=settings.google_calendar_id, body=body).execute()
+    event = (
+        service.events()
+        .insert(calendarId=settings.google_calendar_id, body=body)
+        .execute()
+    )
 
     # 若有提醒設定，同步寫入 Firestore 供 Bot 定時推播 LINE 通知
     if effective_minutes is not None and line_user_id and details.start_time:
         reminder_id = str(uuid.uuid4())  # 使用 UUID 避免 ID 衝突
         now = datetime.now(timezone.utc)
         reminder_at = details.start_time - timedelta(minutes=effective_minutes)
-        await store.create_reminder(reminder_id, {
-            "line_user_id": line_user_id,
-            "event_id": event["id"],
-            "event_summary": details.summary or "",
-            "start_time": details.start_time,
-            "reminder_at": reminder_at,          # 到達此時間點時推播通知
-            "reminder_minutes": effective_minutes,
-            "sent": False,                        # Cloud Scheduler 推播後標記為 True
-            "created_at": now,
-        })
+        await store.create_reminder(
+            reminder_id,
+            {
+                "line_user_id": line_user_id,
+                "event_id": event["id"],
+                "event_summary": details.summary or "",
+                "start_time": details.start_time,
+                "reminder_at": reminder_at,  # 到達此時間點時推播通知
+                "reminder_minutes": effective_minutes,
+                "sent": False,  # Cloud Scheduler 推播後標記為 True
+                "created_at": now,
+            },
+        )
 
     return event
 
@@ -148,7 +164,7 @@ async def query_events(
     time_range: TimeRange,
     keyword: str | None = None,
     max_results: int = 20,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     service = _get_service(credentials)
 
     params = {
@@ -171,10 +187,14 @@ async def update_event(
     event_id: str,
     updates: EventDetails,
     line_user_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     service = _get_service(credentials)
 
-    event = service.events().get(calendarId=settings.google_calendar_id, eventId=event_id).execute()
+    event = (
+        service.events()
+        .get(calendarId=settings.google_calendar_id, eventId=event_id)
+        .execute()
+    )
 
     if updates.summary:
         event["summary"] = updates.summary
@@ -193,7 +213,9 @@ async def update_event(
 
     if line_user_id:
         event["description"] = _build_description(
-            updates.description if updates.description is not None else event.get("description"),
+            updates.description
+            if updates.description is not None
+            else event.get("description"),
             line_user_id,
         )
     elif updates.description is not None:
@@ -210,12 +232,17 @@ async def update_event(
         if existing_reminder:
             minutes = existing_reminder["reminder_minutes"]
             new_reminder_at = updates.start_time - timedelta(minutes=minutes)
-            await store.update_reminder_by_event(line_user_id, event_id, {
-                "start_time": updates.start_time,
-                "reminder_at": new_reminder_at,
-                "event_summary": updates.summary or existing_reminder["event_summary"],
-                "sent": False,
-            })
+            await store.update_reminder_by_event(
+                line_user_id,
+                event_id,
+                {
+                    "start_time": updates.start_time,
+                    "reminder_at": new_reminder_at,
+                    "event_summary": updates.summary
+                    or existing_reminder["event_summary"],
+                    "sent": False,
+                },
+            )
 
     return updated
 
@@ -226,12 +253,14 @@ async def delete_event(
     line_user_id: str | None = None,
 ) -> None:
     service = _get_service(credentials)
-    service.events().delete(calendarId=settings.google_calendar_id, eventId=event_id).execute()
+    service.events().delete(
+        calendarId=settings.google_calendar_id, eventId=event_id
+    ).execute()
     if line_user_id:
         await store.delete_reminder_by_event(line_user_id, event_id)
 
 
-def format_event_summary(event: dict) -> str:
+def format_event_summary(event: dict[str, Any]) -> str:
     """格式化單一 event 供顯示"""
     summary = event.get("summary", "(無標題)")
     start = event.get("start", {})
