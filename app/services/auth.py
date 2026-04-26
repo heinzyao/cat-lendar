@@ -20,25 +20,55 @@ token=None 的設計：
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from google.oauth2.credentials import Credentials
 
 from app.config import settings
 
-# Google Calendar 讀寫權限
+logger = logging.getLogger(__name__)
+
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# 記憶體快取：OAuth 重新授權後更新，避免需要重新部署才能生效
+_cached_refresh_token: str | None = None
 
 
 def get_shared_credentials() -> Credentials:
     """建立 App Owner 的 Google OAuth Credentials（共享日曆架構）。
 
-    token=None：google-auth 函式庫會在第一次 API 呼叫時自動用 refresh_token
-    換取有效的 access_token，無需手動管理 access_token 的快取與更新。
+    優先使用記憶體快取（重新授權後更新），fallback 到啟動時環境變數。
     """
+    token = _cached_refresh_token or settings.google_refresh_token
     return Credentials(
-        token=None,                                           # access_token 由 SDK 自動取得
-        refresh_token=settings.google_refresh_token,          # 長效 refresh token（設定於 .env）
-        token_uri="https://oauth2.googleapis.com/token",      # Google OAuth 2.0 token 端點
+        token=None,
+        refresh_token=token,
+        token_uri="https://oauth2.googleapis.com/token",
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
         scopes=SCOPES,
     )
+
+
+async def update_refresh_token(new_token: str) -> None:
+    """更新 refresh token：寫入記憶體快取並同步更新 Secret Manager。"""
+    global _cached_refresh_token
+    _cached_refresh_token = new_token
+    await asyncio.to_thread(_write_to_secret_manager, new_token)
+
+
+def _write_to_secret_manager(token: str) -> None:
+    if not settings.gcp_project_id:
+        logger.warning("gcp_project_id 未設定，略過 Secret Manager 更新")
+        return
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        parent = f"projects/{settings.gcp_project_id}/secrets/GOOGLE_REFRESH_TOKEN"
+        client.add_secret_version(
+            request={"parent": parent, "payload": {"data": token.encode("utf-8")}}
+        )
+        logger.info("GOOGLE_REFRESH_TOKEN 已更新至 Secret Manager")
+    except Exception:
+        logger.exception("寫入 Secret Manager 失敗")

@@ -116,6 +116,13 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await line_messaging.reply_text(reply_token, i18n.NOTIFY_ENABLED)
         return
 
+    if text == "重新授權":
+        if not settings.owner_line_user_id or user_id != settings.owner_line_user_id:
+            await line_messaging.reply_text(reply_token, i18n.REAUTH_OWNER_ONLY)
+            return
+        await line_messaging.reply_text(reply_token, i18n.REAUTH_PROMPT)
+        return
+
     # 取得 App Owner 的 Google OAuth 共享憑證（所有使用者共用同一 Google 帳號的日曆）
     credentials = auth.get_shared_credentials()
 

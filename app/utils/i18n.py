@@ -37,6 +37,14 @@ DEFAULT_REMINDER_SET = "✅ 已設定預設提醒：每個行程開始前 {minut
 DEFAULT_REMINDER_CLEARED = "✅ 已關閉預設提醒"
 REMINDER_EVENT_NOT_FOUND = "找不到符合的行程，請確認行程名稱或時間。"
 
+# OAuth 重新授權
+REAUTH_PROMPT = (
+    "請在 Mac 上執行以下指令重新授權 Google Calendar：\n\n"
+    "uv run python scripts/get_token.py\n\n"
+    "瀏覽器授權完成後，token 會自動更新至 Secret Manager，立即生效。"
+)
+REAUTH_OWNER_ONLY = "此指令僅供管理員使用。"
+
 # Help
 HELP_MESSAGE = (
     "哈囉！我是 Cat-Lendar，是你在 LINE 上的日曆小幫手 🗓️\n"

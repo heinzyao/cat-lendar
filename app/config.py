@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # GCP 設定
     gcp_project_id: str = ""  # Firestore 所在的 GCP 專案 ID（空字串時使用 ADC 預設）
 
+    # OAuth 重新授權（LINE Bot 觸發流程）
+    owner_line_user_id: str = ""   # App Owner 的 LINE user ID，限定誰可觸發重新授權
+    google_redirect_uri: str = ""  # OAuth callback URL，格式：https://<cloud-run-url>/oauth/callback
+
     # 通知設定
     notify_secret: str = ""               # /notify 端點的身份驗證 token
     default_reminder_minutes: int = 15    # 系統預設提醒分鐘數（使用者可覆蓋）

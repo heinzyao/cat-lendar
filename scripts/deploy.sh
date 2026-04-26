@@ -94,7 +94,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --set-secrets="$SET_SECRETS" \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},OWNER_LINE_USER_ID=${OWNER_LINE_USER_ID:-},GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-}" \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=10 \
