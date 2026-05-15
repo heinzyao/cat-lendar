@@ -214,7 +214,7 @@ Total of 70 tests covering:
 | Service URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
 | Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
 | Region | `asia-east1` |
-| Latest Revision | `line-calendar-bot-00019-2f6` |
+| Latest Revision | `line-calendar-bot-00033-s87` |
 
 ### License
 
