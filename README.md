@@ -142,7 +142,7 @@ cat-lendar/
 │   ├── deploy.sh               # Build + Push + Deploy to Cloud Run
 │   ├── dev.sh                  # Local Dev (uvicorn + ngrok)
 │   └── update_secret.sh        # Update Secret Manager keys
-├── tests/                      # 67 tests, asyncio_mode=auto
+├── tests/                      # 70 tests, asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # Complete deployment guide
@@ -192,7 +192,7 @@ Other
 uv run python -m pytest tests/ -q
 ```
 
-Total of 67 tests covering:
+Total of 70 tests covering:
 
 | Test File | Coverage |
 |-----------|----------|
@@ -360,7 +360,7 @@ cat-lendar/
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
 │   └── update_secret.sh        # 更新 Secret Manager 密鑰
-├── tests/                      # 67 個測試，asyncio_mode=auto
+├── tests/                      # 70 個測試，asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # 完整部署指南
@@ -409,7 +409,7 @@ cat-lendar/
 uv run python -m pytest tests/ -q
 ```
 
-共 67 個測試，涵蓋：
+共 70 個測試，涵蓋：
 
 | 測試檔案 | 涵蓋範圍 |
 |---------|---------|

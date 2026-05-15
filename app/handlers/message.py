@@ -253,8 +253,13 @@ async def _handle_query(
     intent: CalendarIntent,
     credentials,
 ) -> str:
+    time_range = intent.time_range
+    if time_range is None:
+        now = datetime.now(timezone.utc)
+        time_range = TimeRange(start=now, end=now + timedelta(days=7))
+
     events = await calendar.query_events(
-        credentials, intent.time_range, keyword=intent.search_keyword
+        credentials, time_range, keyword=intent.search_keyword
     )
 
     if not events:
