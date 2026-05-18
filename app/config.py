@@ -18,7 +18,7 @@
   5 分鐘內使用者未選擇則自動清除，避免殘留的狀態影響後續操作
 - conversation_history_ttl_seconds（1800 秒）：對話記憶有效期
   30 分鐘無操作後清除，避免舊對話影響新指令的解析（避免「錯誤的上下文」）
-- max_conversation_turns（10 輪）：最多保留幾輪對話歷史傳給 Claude
+- max_conversation_turns（10 輪）：最多保留幾輪對話歷史傳給 Gemini
   保留更多可提升上下文理解，但也增加 API token 消耗與延遲
 
 Singleton 設計：
@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     line_channel_secret: str        # HMAC-SHA256 簽名驗證用
     line_channel_access_token: str  # Reply API / Push API 授權 token
 
-    # Claude API
-    anthropic_api_key: str
-    claude_model: str = "claude-sonnet-4-20250514"  # 用於 NLP 意圖解析的模型版本
+    # Gemini API
+    gemini_api_key: str
+    gemini_model: str = "gemini-2.5-flash"  # 用於 NLP 意圖解析的模型版本
 
     # Google OAuth 憑證（Shared Calendar 架構）
     google_client_id: str

@@ -6,7 +6,6 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
     "line-bot-sdk>=3.22,<4",
-    "anthropic>=0.42,<1",
     "google-api-python-client>=2.160,<3",
     "google-auth>=2.37,<3",
     "google-auth-oauthlib>=1.2,<2",
@@ -15,6 +14,7 @@ dependencies = [
     "cryptography>=44,<45",
     "httpx>=0.28,<1",
     "google-cloud-secret-manager>=2.20,<3",
+    "google-generativeai>=0.8.6",
 ]
 
 [dependency-groups]
