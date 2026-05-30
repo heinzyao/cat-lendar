@@ -240,12 +240,13 @@ async def _handle_create(
     if reminder_minutes is not None:
         msg += "\n" + i18n.REMINDER_SET.format(minutes=reminder_minutes)
 
-    await line_messaging.reply_text(reply_token, msg)
+    reply_msg = _with_assumption_note(msg, intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
 
     # 通知其他已登記的用戶（共用日曆場景）
     await calendar_notify.notify_others("create", user_id, event.get("summary", ""), time_str)
 
-    return _with_assumption_note(msg, intent)
+    return reply_msg
 
 
 async def _handle_query(
@@ -263,8 +264,9 @@ async def _handle_query(
     )
 
     if not events:
-        await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return i18n.NO_EVENTS_FOUND
+        reply_msg = _with_assumption_note(i18n.NO_EVENTS_FOUND, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
+        return reply_msg
 
     lines = [i18n.EVENTS_LIST_HEADER]
     for idx, event in enumerate(events, 1):
@@ -276,8 +278,9 @@ async def _handle_query(
             )
         )
     msg = "".join(lines).strip()
-    await line_messaging.reply_text(reply_token, msg)
-    return _with_assumption_note(msg, intent)
+    reply_msg = _with_assumption_note(msg, intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
+    return reply_msg
 
 
 async def _handle_update(
@@ -300,8 +303,9 @@ async def _handle_update(
     """
     events = await _find_matching_events(intent, credentials)
     if not events:
-        await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return i18n.NO_EVENTS_FOUND
+        reply_msg = _with_assumption_note(i18n.NO_EVENTS_FOUND, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
+        return reply_msg
 
     if len(events) == 1:
         # 二次解析：將原始行程資料傳給 Claude，讓它精確計算需更新的欄位
@@ -313,12 +317,13 @@ async def _handle_update(
         updated = await calendar.update_event(credentials, events[0]["id"], details_to_use, line_user_id=user_id)
         time_str = _get_event_time_str(updated)
         msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
-        await line_messaging.reply_text(reply_token, msg)
+        reply_msg = _with_assumption_note(msg, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
 
         # 通知其他用戶此行程已被修改
         await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
 
-        return _with_assumption_note(msg, intent)
+        return reply_msg
     else:
         # 多筆符合：進入選擇狀態機，要求使用者指定要修改哪一筆
         await _save_selection_state(user_id, "select_event_for_update", events, intent)
@@ -333,19 +338,21 @@ async def _handle_delete(
 ) -> str:
     events = await _find_matching_events(intent, credentials)
     if not events:
-        await line_messaging.reply_text(reply_token, i18n.NO_EVENTS_FOUND)
-        return i18n.NO_EVENTS_FOUND
+        reply_msg = _with_assumption_note(i18n.NO_EVENTS_FOUND, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
+        return reply_msg
 
     if len(events) == 1:
         summary = events[0].get("summary", "(無標題)")
         await calendar.delete_event(credentials, events[0]["id"], line_user_id=user_id)
         msg = i18n.EVENT_DELETED.format(summary=summary)
-        await line_messaging.reply_text(reply_token, msg)
+        reply_msg = _with_assumption_note(msg, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
 
         # 通知其他用戶
         await calendar_notify.notify_others("delete", user_id, summary)
 
-        return _with_assumption_note(msg, intent)
+        return reply_msg
     else:
         await _save_selection_state(user_id, "select_event_for_delete", events, intent)
         return await _reply_selection(reply_token, events)
@@ -398,23 +405,26 @@ async def _handle_selection(
             updated = await calendar.update_event(credentials, selected["id"], details_to_use, line_user_id=user_id)
             time_str = _get_event_time_str(updated)
             msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
-            await line_messaging.reply_text(reply_token, msg)
+            reply_msg = _with_assumption_note(msg, intent)
+            await line_messaging.reply_text(reply_token, reply_msg)
 
             # 通知其他用戶
             await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
 
-            return msg
+            return reply_msg
 
         elif user_state.action == "select_event_for_delete":
             summary = selected.get("summary", "(無標題)")
             await calendar.delete_event(credentials, selected["id"], line_user_id=user_id)
             msg = i18n.EVENT_DELETED.format(summary=summary)
-            await line_messaging.reply_text(reply_token, msg)
+            intent = CalendarIntent.model_validate(user_state.original_intent)
+            reply_msg = _with_assumption_note(msg, intent)
+            await line_messaging.reply_text(reply_token, reply_msg)
 
             # 通知其他用戶
             await calendar_notify.notify_others("delete", user_id, summary)
 
-            return msg
+            return reply_msg
     except Exception:
         logger.exception("Selection action failed")
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
@@ -426,10 +436,14 @@ async def _handle_selection(
 
 
 async def _find_matching_events(intent: CalendarIntent, credentials) -> list[dict]:
-    if not intent.time_range:
+    time_range = intent.time_range
+    if time_range is None and intent.search_keyword:
+        now = datetime.now(timezone.utc)
+        time_range = TimeRange(start=now - timedelta(days=7), end=now + timedelta(days=7))
+    if time_range is None:
         return []
     return await calendar.query_events(
-        credentials, intent.time_range, keyword=intent.search_keyword
+        credentials, time_range, keyword=intent.search_keyword
     )
 
 
@@ -514,8 +528,9 @@ async def _handle_set_reminder(
 
     events = await _find_matching_events(intent, credentials)
     if not events:
-        await line_messaging.reply_text(reply_token, i18n.REMINDER_EVENT_NOT_FOUND)
-        return i18n.REMINDER_EVENT_NOT_FOUND
+        reply_msg = _with_assumption_note(i18n.REMINDER_EVENT_NOT_FOUND, intent)
+        await line_messaging.reply_text(reply_token, reply_msg)
+        return reply_msg
 
     if len(events) > 1:
         await _save_selection_state(user_id, "select_event_for_update", events, intent)
@@ -558,5 +573,6 @@ async def _handle_set_reminder(
         })
         msg = i18n.REMINDER_SET.format(minutes=reminder_minutes)
 
-    await line_messaging.reply_text(reply_token, msg)
-    return _with_assumption_note(msg, intent)
+    reply_msg = _with_assumption_note(msg, intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
+    return reply_msg

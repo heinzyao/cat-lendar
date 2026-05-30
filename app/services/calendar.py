@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -52,6 +53,11 @@ def _get_service(credentials: Credentials):
     - googleapiclient.discovery.build 會快取 discovery document，實際開銷不大
     """
     return build("calendar", "v3", credentials=credentials)
+
+
+async def _execute(request):
+    """Run the blocking googleapiclient request off the event loop."""
+    return await asyncio.to_thread(request.execute)
 
 
 def _build_description(original: str | None, line_user_id: str) -> str:
@@ -131,10 +137,8 @@ async def create_event(
             "overrides": [{"method": "popup", "minutes": effective_minutes}],
         }
 
-    event = (
-        service.events()
-        .insert(calendarId=settings.google_calendar_id, body=body)
-        .execute()
+    event = await _execute(
+        service.events().insert(calendarId=settings.google_calendar_id, body=body)
     )
 
     # 若有提醒設定，同步寫入 Firestore 供 Bot 定時推播 LINE 通知
@@ -178,7 +182,7 @@ async def query_events(
     if keyword:
         params["q"] = keyword
 
-    result = service.events().list(**params).execute()
+    result = await _execute(service.events().list(**params))
     return result.get("items", [])
 
 
@@ -190,10 +194,8 @@ async def update_event(
 ) -> dict[str, Any]:
     service = _get_service(credentials)
 
-    event = (
-        service.events()
-        .get(calendarId=settings.google_calendar_id, eventId=event_id)
-        .execute()
+    event = await _execute(
+        service.events().get(calendarId=settings.google_calendar_id, eventId=event_id)
     )
 
     if updates.summary:
@@ -221,10 +223,10 @@ async def update_event(
     elif updates.description is not None:
         event["description"] = updates.description
 
-    updated = (
-        service.events()
-        .update(calendarId=settings.google_calendar_id, eventId=event_id, body=event)
-        .execute()
+    updated = await _execute(
+        service.events().update(
+            calendarId=settings.google_calendar_id, eventId=event_id, body=event
+        )
     )
 
     if updates.start_time is not None and line_user_id:
@@ -253,9 +255,9 @@ async def delete_event(
     line_user_id: str | None = None,
 ) -> None:
     service = _get_service(credentials)
-    service.events().delete(
-        calendarId=settings.google_calendar_id, eventId=event_id
-    ).execute()
+    await _execute(
+        service.events().delete(calendarId=settings.google_calendar_id, eventId=event_id)
+    )
     if line_user_id:
         await store.delete_reminder_by_event(line_user_id, event_id)
 
