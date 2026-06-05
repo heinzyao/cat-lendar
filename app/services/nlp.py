@@ -64,12 +64,15 @@ def _get_model(system_prompt: str) -> genai.GenerativeModel:
 
     Gemini 的 system_instruction 在 model 層設定，而非 messages 層，
     因此每次 system_prompt 不同（含即時時間）都需建立新實例。
+    response_mime_type="application/json" 在協議層強制 JSON 輸出，
+    避免 Gemini 自行決定改用對話格式回應。
     """
     _ensure_configured()
     return genai.GenerativeModel(
         model_name=settings.gemini_model,
         system_instruction=system_prompt,
         safety_settings=_SAFETY_SETTINGS,
+        generation_config={"response_mime_type": "application/json"},
     )
 
 
