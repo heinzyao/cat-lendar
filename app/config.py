@@ -8,10 +8,10 @@
 
 各欄位設計說明
 --------------
-- google_refresh_token：App Owner 的 Google OAuth refresh token
-  （Shared Calendar 架構：所有 LINE 用戶共用同一個 Google 帳號的日曆）
+- google_service_account_json：Service Account 金鑰 JSON（完整 JSON 字串）
+  （Shared Calendar 架構：所有 LINE 用戶共用同一 Service Account 的日曆存取權）
 - encryption_key：Fernet 對稱加密金鑰，base64 編碼的 32 bytes
-  用於加密存入 Firestore 的敏感資料（如 OAuth token）
+  用於加密存入 Firestore 的敏感資料
 - notify_secret：Cloud Scheduler 呼叫 /notify 端點時的身份驗證 token
   防止任意人觸發提醒推播
 - user_state_ttl_seconds（300 秒）：選擇行程的等待逾時
@@ -36,10 +36,8 @@ class Settings(BaseSettings):
     gemini_api_key: str
     gemini_model: str = "gemini-2.5-flash"  # 用於 NLP 意圖解析的模型版本
 
-    # Google OAuth 憑證（Shared Calendar 架構）
-    google_client_id: str
-    google_client_secret: str
-    google_refresh_token: str = ""          # App Owner 的長效 refresh token
+    # Google Service Account 憑證（Shared Calendar 架構）
+    google_service_account_json: str = ""   # Service Account JSON 金鑰（完整 JSON 字串）
     google_calendar_id: str = "primary"     # 目標日曆 ID（"primary" 代表預設日曆）
 
     # 加密（Fernet 對稱加密）
@@ -47,10 +45,6 @@ class Settings(BaseSettings):
 
     # GCP 設定
     gcp_project_id: str = ""  # Firestore 所在的 GCP 專案 ID（空字串時使用 ADC 預設）
-
-    # OAuth 重新授權（LINE Bot 觸發流程）
-    owner_line_user_id: str = ""   # App Owner 的 LINE user ID，限定誰可觸發重新授權
-    google_redirect_uri: str = ""  # OAuth callback URL，格式：https://<cloud-run-url>/oauth/callback
 
     # 通知設定
     notify_secret: str = ""               # /notify 端點的身份驗證 token
