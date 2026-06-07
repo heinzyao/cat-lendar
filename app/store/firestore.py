@@ -301,3 +301,48 @@ async def verify_and_consume_oauth_state(state: str) -> bool:
     if expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         return False
     return True
+
+
+# ── Calendar Sync Token ──
+
+
+async def get_sync_token() -> str | None:
+    doc = await get_db().collection("system").document("calendar_sync").get()
+    return doc.to_dict().get("sync_token") if doc.exists else None
+
+
+async def save_sync_token(token: str) -> None:
+    await get_db().collection("system").document("calendar_sync").set(
+        {"sync_token": token, "synced_at": datetime.now(timezone.utc)}, merge=True
+    )
+
+
+async def get_reminders_by_event_id(event_id: str) -> list[dict]:
+    """取得某 event_id 的所有 reminder（跨用戶）。"""
+    docs = await get_db().collection("reminders").where("event_id", "==", event_id).get()
+    return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+
+
+async def delete_reminders_by_event_id(event_id: str) -> int:
+    """刪除某 event_id 的所有 reminder，回傳刪除數量。"""
+    docs = await get_db().collection("reminders").where("event_id", "==", event_id).get()
+    for doc in docs:
+        await doc.reference.delete()
+    return len(docs)
+
+
+async def update_reminders_time_by_event_id(event_id: str, new_start: datetime) -> int:
+    """更新某 event_id 所有 reminder 的時間，回傳更新數量。"""
+    docs = await get_db().collection("reminders").where("event_id", "==", event_id).get()
+    count = 0
+    for doc in docs:
+        data = doc.to_dict()
+        minutes = data.get("reminder_minutes", 0)
+        new_reminder_at = new_start - timedelta(minutes=minutes)
+        await doc.reference.update({
+            "start_time": new_start,
+            "reminder_at": new_reminder_at,
+            "sent": False,
+        })
+        count += 1
+    return count

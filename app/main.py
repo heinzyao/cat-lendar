@@ -30,6 +30,7 @@ import logging
 from fastapi import FastAPI
 
 from app.routes.notify import router as notify_router
+from app.routes.sync import router as sync_router
 from app.routes.webhook import router as webhook_router
 
 # 設定日誌格式：timestamp + 層級 + 模組名稱，方便在 Cloud Logging 中追蹤問題來源
@@ -47,6 +48,7 @@ app = FastAPI(title="LINE Calendar Bot", docs_url=None, redoc_url=None)
 # - notify_router：定時提醒推播（GET/POST /notify），由 Cloud Scheduler 觸發
 app.include_router(webhook_router)
 app.include_router(notify_router)
+app.include_router(sync_router)
 
 
 @app.get("/health")
