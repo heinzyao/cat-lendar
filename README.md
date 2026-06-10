@@ -20,11 +20,11 @@ A LINE chatbot that manages a shared calendar using natural language via LINE me
 - **Cross-user Notification**: Push notifications to other users when someone adds, edits, or deletes an event.
 - **Context-aware Memory**: Multi-turn conversation capability, understands pronouns and implicit context.
 - **Notification Settings**: "Turn off notifications" "Turn on notifications" — Easily toggle event sync notifications.
-- **API Rate Limiting**: Max 10 Claude API calls per minute per user (sliding window) to prevent API abuse.
+- **API Rate Limiting**: Max 10 Gemini API calls per minute per user (sliding window) to prevent API abuse.
 
 ### System Architecture
 
-**Shared Calendar Mode**: The App owner performs OAuth authorization once, and all users share the same Google Calendar. No individual login is required.
+**Shared Calendar Mode**: A Service Account is granted access to the shared Google Calendar once, and all users share that calendar. No individual login is required.
 
 ```text
 LINE User (Anyone)
@@ -33,18 +33,18 @@ LINE User (Anyone)
 Cloud Run (FastAPI)
    └── POST /webhook
          │
-         ├── Claude API          (Natural Language Parsing)
+         ├── Gemini API          (Natural Language Parsing)
          ├── Google Calendar API (Shared Calendar CRUD)
          └── Cloud Firestore     (Dialogue State, Reminders, User Registry)
                 │
-                └── Secret Manager (API Keys, Refresh Token)
+                └── Secret Manager (API Keys, Service Account Key)
 ```
 
 | Component | Technology |
 |-----------|------------|
 | Language / Framework | Python 3.12 + FastAPI |
 | Deployment | Google Cloud Run (asia-east1) |
-| NLP | Claude API (claude-sonnet-4-5) |
+| NLP | Gemini API (gemini-2.5-flash) |
 | Database | Cloud Firestore |
 | Secrets | Google Secret Manager |
 | Package Manager| uv |
@@ -86,13 +86,12 @@ Please refer to [DEPLOYMENT.md](DEPLOYMENT.md) for detailed steps.
 |----------|-------------|
 | `LINE_CHANNEL_SECRET` | LINE Channel Secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
-| `ANTHROPIC_API_KEY` | Claude API Key |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID (Desktop app type) |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
-| `GOOGLE_REFRESH_TOKEN` | Pre-authorized refresh token (Run `scripts/get_token.py` to obtain) |
+| `GEMINI_API_KEY` | Gemini API Key |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON key (Run `scripts/setup_service_account.sh` for one-time setup) |
 | `GOOGLE_CALENDAR_ID` | Target Calendar ID (Default: `primary`) |
 | `ENCRYPTION_KEY` | AES-256-GCM encryption key (base64, 32 bytes) |
 | `GCP_PROJECT_ID` | GCP Project ID |
+| `NOTIFY_SECRET` | `X-Internal-Secret` header for `/internal/*` endpoints (called by Cloud Scheduler) |
 | `TIMEZONE` | Timezone (Default: `Asia/Taipei`) |
 
 Generate ENCRYPTION_KEY:
@@ -101,12 +100,10 @@ Generate ENCRYPTION_KEY:
 python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
 ```
 
-Get GOOGLE_REFRESH_TOKEN (one-time setup):
+Set up the Service Account (one-time setup):
 
 ```bash
-export GOOGLE_CLIENT_ID=your_client_id
-export GOOGLE_CLIENT_SECRET=your_client_secret
-uv run python scripts/get_token.py
+bash scripts/setup_service_account.sh
 ```
 
 ### Project Structure
@@ -120,7 +117,7 @@ cat-lendar/
 │   │   ├── webhook.py          # POST /webhook (LINE event reception)
 │   │   └── notify.py           # POST /notify (Scheduled reminder triggering)
 │   ├── services/
-│   │   ├── nlp.py              # Claude API intent parsing
+│   │   ├── nlp.py              # Gemini API intent parsing
 │   │   ├── calendar.py         # Google Calendar CRUD
 │   │   ├── calendar_notify.py  # Cross-user event notifications
 │   │   ├── notification.py     # Scheduled reminder dispatcher
@@ -138,7 +135,7 @@ cat-lendar/
 │       ├── datetime_utils.py   # Timezone/Datetime formatters
 │       └── i18n.py             # Traditional Chinese message templates
 ├── scripts/
-│   ├── get_token.py            # Get refresh token for app owner
+│   ├── setup_service_account.sh # One-time Service Account setup
 │   ├── deploy.sh               # Build + Push + Deploy to Cloud Run
 │   ├── dev.sh                  # Local Dev (uvicorn + ngrok)
 │   └── update_secret.sh        # Update Secret Manager keys
@@ -239,10 +236,10 @@ MIT
 - **對話記憶**：多輪對話上下文理解，支援代名詞與省略句
 
 - **通知設定**：「關閉通知」「開啟通知」——自由開關行程異動通知
-- **API 速率限制**：每位用戶每分鐘最多 10 次 Claude API 呼叫（滑動視窗演算法），防止 API 濫用
+- **API 速率限制**：每位用戶每分鐘最多 10 次 Gemini API 呼叫（滑動視窗演算法），防止 API 濫用
 ### 系統架構
 
-**共享行事曆模式**：App owner 預先完成一次 OAuth 授權，所有用戶共用同一個 Google Calendar，無需個別登入。
+**共享行事曆模式**：以 Service Account 一次性授權存取共享 Google Calendar，所有用戶共用同一個行事曆，無需個別登入。
 
 ```text
 LINE User（任何人）
@@ -251,18 +248,18 @@ LINE User（任何人）
 Cloud Run (FastAPI)
    └── POST /webhook
          │
-         ├── Claude API          (自然語言解析)
+         ├── Gemini API          (自然語言解析)
          ├── Google Calendar API (共享行程 CRUD)
          └── Cloud Firestore     (對話狀態、提醒、用戶登記)
                 │
-                └── Secret Manager (API 金鑰、refresh token)
+                └── Secret Manager (API 金鑰、Service Account 金鑰)
 ```
 
 | 元件 | 技術 |
 |------|------|
 | 語言 / 框架 | Python 3.12 + FastAPI |
 | 部署平台 | Google Cloud Run (asia-east1) |
-| NLP | Claude API (claude-sonnet-4-5) |
+| NLP | Gemini API (gemini-2.5-flash) |
 | 資料庫 | Cloud Firestore |
 | 密鑰管理 | Google Secret Manager |
 | 套件管理 | uv |
@@ -304,13 +301,12 @@ bash scripts/deploy.sh
 |------|------|
 | `LINE_CHANNEL_SECRET` | LINE Channel Secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
-| `ANTHROPIC_API_KEY` | Claude API 金鑰 |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID（Desktop app 類型） |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
-| `GOOGLE_REFRESH_TOKEN` | App owner 預授權的 refresh token（執行 `scripts/get_token.py` 取得） |
+| `GEMINI_API_KEY` | Gemini API 金鑰 |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 金鑰（執行 `scripts/setup_service_account.sh` 一次性設定） |
 | `GOOGLE_CALENDAR_ID` | 目標行事曆 ID（預設 `primary`） |
 | `ENCRYPTION_KEY` | AES-256-GCM 加密金鑰（base64，32 bytes） |
 | `GCP_PROJECT_ID` | GCP 專案 ID |
+| `NOTIFY_SECRET` | `/internal/*` 端點的 `X-Internal-Secret` 驗證標頭（由 Cloud Scheduler 呼叫） |
 | `TIMEZONE` | 時區（預設 `Asia/Taipei`） |
 
 產生 ENCRYPTION_KEY：
@@ -319,12 +315,10 @@ bash scripts/deploy.sh
 python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
 ```
 
-取得 GOOGLE_REFRESH_TOKEN（一次性）：
+設定 Service Account（一次性）：
 
 ```bash
-export GOOGLE_CLIENT_ID=your_client_id
-export GOOGLE_CLIENT_SECRET=your_client_secret
-uv run python scripts/get_token.py
+bash scripts/setup_service_account.sh
 ```
 
 ### 專案結構
@@ -338,7 +332,7 @@ cat-lendar/
 │   │   ├── webhook.py          # POST /webhook（LINE 事件接收）
 │   │   └── notify.py           # POST /notify（到期提醒排程）
 │   ├── services/
-│   │   ├── nlp.py              # Claude API 意圖解析
+│   │   ├── nlp.py              # Gemini API 意圖解析
 │   │   ├── calendar.py         # Google Calendar CRUD
 │   │   ├── calendar_notify.py  # 跨用戶異動推播通知
 │   │   ├── notification.py     # 行程提醒發送
@@ -356,7 +350,7 @@ cat-lendar/
 │       ├── datetime_utils.py   # 時區 / 時間格式化
 │       └── i18n.py             # 繁體中文訊息模板
 ├── scripts/
-│   ├── get_token.py            # 一次性取得 app owner refresh token
+│   ├── setup_service_account.sh # 一次性設定 Service Account
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
 │   └── update_secret.sh        # 更新 Secret Manager 密鑰

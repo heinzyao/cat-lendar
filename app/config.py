@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Taipei"
     user_state_ttl_seconds: int = 300     # 多筆行程選擇的等待逾時（5 分鐘）
     conversation_history_ttl_seconds: int = 1800  # 對話記憶有效期（30 分鐘）
-    max_conversation_turns: int = 10      # 傳給 Claude 的最大對話輪次
+    max_conversation_turns: int = 10      # 傳給 Gemini 的最大對話輪次
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
