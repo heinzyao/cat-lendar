@@ -20,7 +20,7 @@
 
 ## 架構概覽
 
-**共享行事曆模式**：App owner 預先完成一次 OAuth 授權（Desktop app 類型），取得 refresh token 存入 Secret Manager。所有 LINE 用戶共用同一個 Google Calendar，無需個別授權流程。
+**共享行事曆模式**：以 Service Account 存取 app owner 共享的 Google Calendar，金鑰（JSON）存入 Secret Manager。所有 LINE 用戶共用同一個 Google Calendar，無需個別授權流程。
 
 ---
 
@@ -32,8 +32,8 @@ app/
 ├── main.py                   # FastAPI 入口，路由掛載（webhook + notify）
 ├── handlers/message.py       # ★ 核心協調器：接收訊息 → NLP → 執行 → 跨用戶通知
 ├── services/
-│   ├── nlp.py                # ★ Claude API 意圖解析（parse_intent + parse_update_details 二次解析）
-│   ├── auth.py               # get_shared_credentials()：使用 app owner refresh token
+│   ├── nlp.py                # ★ Gemini API 意圖解析（parse_intent + parse_update_details 二次解析）
+│   ├── auth.py               # get_shared_credentials()：使用 Service Account 憑證
 │   ├── calendar.py           # Google Calendar CRUD（使用 settings.google_calendar_id）
 │   ├── calendar_notify.py    # ★ 行事曆異動後推播通知給其他用戶
 │   ├── notification.py       # 行程到期提醒發送（Cloud Run Scheduler 觸發）
@@ -48,11 +48,11 @@ app/
     ├── datetime_utils.py     # 時區、格式化（Asia/Taipei）
     └── i18n.py               # 繁體中文訊息模板
 scripts/
-├── get_token.py              # 一次性：app owner 授權取得 refresh token
+├── setup_service_account.sh  # 一次性：建立 Service Account 並設定 Secret Manager
 ├── deploy.sh                 # 建置 + 推送 + 部署到 Cloud Run
 ├── dev.sh                    # 本地開發（uvicorn + ngrok）
 └── update_secret.sh          # 更新 Secret Manager 密鑰
-tests/                        # 67 個測試，asyncio_mode=auto
+tests/                        # 70 個測試，asyncio_mode=auto
 ```
 
 ---
@@ -100,10 +100,8 @@ user_prefs/{line_user_id}
 |------|------|------|
 | `LINE_CHANNEL_SECRET` | Secret Manager | LINE Channel 驗簽金鑰 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Secret Manager | LINE push/reply token |
-| `ANTHROPIC_API_KEY` | Secret Manager | Claude API |
-| `GOOGLE_CLIENT_ID` | Secret Manager | OAuth Client ID（Desktop app 類型） |
-| `GOOGLE_CLIENT_SECRET` | Secret Manager | OAuth Client Secret |
-| `GOOGLE_REFRESH_TOKEN` | Secret Manager | App owner 預授權 refresh token |
+| `GEMINI_API_KEY` | Secret Manager | Gemini API |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Secret Manager | Service Account JSON 金鑰 |
 | `ENCRYPTION_KEY` | Secret Manager | AES-256-GCM 金鑰（base64 32 bytes） |
 | `GCP_PROJECT_ID` | deploy.sh 自動讀取 | GCP 專案 ID |
 | `GOOGLE_CALENDAR_ID` | config 預設 `primary` | 目標行事曆 ID |
@@ -116,7 +114,7 @@ user_prefs/{line_user_id}
 |------|------|
 | Python 3.14 警告 | `line-bot-sdk` 使用 Pydantic V1，Docker image 固定使用 3.12 無此問題 |
 | Firestore TTL | `user_states` 5 分鐘、`conversation_history` 30 分鐘，需在 GCP 設定 TTL policy |
-| refresh token 失效 | 重新執行 `scripts/get_token.py` 並更新 Secret Manager |
+| Service Account 金鑰失效 | 重新執行 `scripts/setup_service_account.sh` 並更新 Secret Manager |
 | 跨用戶通知 | 只有曾傳訊息給 bot 的用戶才會被登記到 `users/` 集合，才能收到通知 |
 | get_display_name | LINE Profile API 需用戶加 bot 為好友，失敗時 fallback 到 `用戶 ...末四碼` |
 
@@ -140,7 +138,7 @@ user_prefs/{line_user_id}
 **完成條件**：產出可直接使用的文件或清楚的實作建議
 
 ### 共通規則
-- 測試不得連線外部服務（Firestore / Claude / LINE）—— 一律 mock
+- 測試不得連線外部服務（Firestore / Gemini / LINE）—— 一律 mock
 - 外部依賴使用 `unittest.mock.AsyncMock`
 - 環境變數使用 `os.environ.setdefault` 注入
 
@@ -207,4 +205,4 @@ user_prefs/{line_user_id}
 ## 擴充方向（待辦）
 
 - [ ] 支援 recurring events（每週定期行程）
-- [ ] 使用量統計（每日 Claude API 呼叫次數）
+- [ ] 使用量統計（每日 Gemini API 呼叫次數）
