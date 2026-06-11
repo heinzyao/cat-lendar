@@ -72,7 +72,6 @@ done
 [[ -z "$NGROK_URL" ]] && error "無法取得 ngrok URL，請確認 ngrok 已登入 (ngrok config add-authtoken <token>)"
 
 WEBHOOK_URL="${NGROK_URL}/webhook"
-REDIRECT_URI="${NGROK_URL}/oauth/callback"
 
 echo
 echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════${RESET}"
@@ -81,9 +80,6 @@ echo -e "${GREEN}${BOLD}══════════════════�
 echo
 echo -e "  ${YELLOW}LINE Bot Webhook URL：${RESET}"
 echo -e "  ${BOLD}$WEBHOOK_URL${RESET}"
-echo
-echo -e "  ${YELLOW}Google OAuth Redirect URI：${RESET}"
-echo -e "  ${BOLD}$REDIRECT_URI${RESET}"
 echo
 echo -e "  ngrok 管理介面: ${BOLD}http://localhost:4040${RESET}"
 echo -e "  按 ${BOLD}Ctrl+C${RESET} 停止所有服務"
