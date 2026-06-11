@@ -133,11 +133,10 @@ info "已產生 ENCRYPTION_KEY（請妥善保存）: ${BOLD}$GENERATED_KEY${RESE
 
 # 密鑰名稱清單（對應 .env.example）
 declare -A SECRETS=(
-  ["LINE_CHANNEL_SECRET"]=""
-  ["LINE_CHANNEL_ACCESS_TOKEN"]=""
-  ["ANTHROPIC_API_KEY"]=""
-  ["GOOGLE_CLIENT_ID"]=""
-  ["GOOGLE_CLIENT_SECRET"]=""
+  ["CATLENDAR_LINE_CHANNEL_SECRET"]=""
+  ["CATLENDAR_LINE_CHANNEL_ACCESS_TOKEN"]=""
+  ["GEMINI_API_KEY"]=""
+  ["NOTIFY_SECRET"]=""
   ["ENCRYPTION_KEY"]="$GENERATED_KEY"
 )
 
@@ -183,8 +182,6 @@ echo -e "  Service Account: ${BOLD}$SA_EMAIL${RESET}"
 echo -e "  Artifact Registry: ${BOLD}$REGION-docker.pkg.dev/$PROJECT_ID/$REPO${RESET}"
 echo
 echo -e "  ${YELLOW}下一步：${RESET}"
-echo -e "  1. 在 GCP Console 設定 OAuth consent screen（External）"
-echo -e "  2. 建立 OAuth 2.0 credentials，下載後填入 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET"
-echo -e "  3. 執行 ${BOLD}./scripts/deploy.sh${RESET} 部署服務"
-echo -e "  4. 將 Cloud Run URL 填回 GOOGLE_REDIRECT_URI secret"
+echo -e "  1. 執行 ${BOLD}./scripts/setup_service_account.sh${RESET} 建立 GOOGLE_SERVICE_ACCOUNT_JSON"
+echo -e "  2. 執行 ${BOLD}./scripts/deploy.sh${RESET} 部署服務"
 echo
