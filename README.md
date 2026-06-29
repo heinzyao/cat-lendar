@@ -21,6 +21,7 @@ A LINE chatbot that manages a shared calendar using natural language via LINE me
 - **Context-aware Memory**: Multi-turn conversation capability, understands pronouns and implicit context.
 - **Notification Settings**: "Turn off notifications" "Turn on notifications" — Easily toggle event sync notifications.
 - **API Rate Limiting**: Max 10 Gemini API calls per minute per user (sliding window) to prevent API abuse.
+- **Incremental Calendar Sync**: Cloud Scheduler triggers `/internal/sync` every 5 minutes; external Google Calendar edits (made outside the bot) are synced back to Firestore reminders via `syncToken`.
 
 ### System Architecture
 
@@ -31,13 +32,17 @@ LINE User (Anyone)
    │  Send Message
    ▼
 Cloud Run (FastAPI)
-   └── POST /webhook
+   ├── POST /webhook
+   │     │
+   │     ├── Gemini API          (Natural Language Parsing)
+   │     ├── Google Calendar API (Shared Calendar CRUD)
+   │     └── Cloud Firestore     (Dialogue State, Reminders, User Registry)
+   │            │
+   │            └── Secret Manager (API Keys, Service Account Key)
+   │
+   └── POST /internal/sync  ← Cloud Scheduler (every 5 min)
          │
-         ├── Gemini API          (Natural Language Parsing)
-         ├── Google Calendar API (Shared Calendar CRUD)
-         └── Cloud Firestore     (Dialogue State, Reminders, User Registry)
-                │
-                └── Secret Manager (API Keys, Service Account Key)
+         └── Google Calendar API (Incremental syncToken sync → Firestore reminders)
 ```
 
 | Component | Technology |
@@ -115,11 +120,13 @@ cat-lendar/
 │   ├── config.py               # pydantic-settings bindings
 │   ├── routes/
 │   │   ├── webhook.py          # POST /webhook (LINE event reception)
-│   │   └── notify.py           # POST /notify (Scheduled reminder triggering)
+│   │   ├── notify.py           # POST /notify (Scheduled reminder triggering)
+│   │   └── sync.py             # POST /internal/sync (Calendar → Firestore incremental sync)
 │   ├── services/
 │   │   ├── nlp.py              # Gemini API intent parsing
 │   │   ├── calendar.py         # Google Calendar CRUD
 │   │   ├── calendar_notify.py  # Cross-user event notifications
+│   │   ├── calendar_sync.py    # Incremental sync via syncToken
 │   │   ├── notification.py     # Scheduled reminder dispatcher
 │   │   ├── line_messaging.py   # LINE reply / push / get_display_name
 │   │   └── auth.py             # Shared Google Credentials
@@ -136,10 +143,13 @@ cat-lendar/
 │       └── i18n.py             # Traditional Chinese message templates
 ├── scripts/
 │   ├── setup_service_account.sh # One-time Service Account setup
+│   ├── setup_gcp.sh            # One-time GCP infrastructure setup
+│   ├── setup_scheduler.sh      # Cloud Scheduler jobs (notify + sync)
 │   ├── deploy.sh               # Build + Push + Deploy to Cloud Run
 │   ├── dev.sh                  # Local Dev (uvicorn + ngrok)
-│   └── update_secret.sh        # Update Secret Manager keys
-├── tests/                      # 70 tests, asyncio_mode=auto
+│   ├── update_secret.sh        # Update Secret Manager keys
+│   └── sync_push.py            # One-off: push weekly calendar summary to LINE
+├── tests/                      # 71 tests, asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # Complete deployment guide
@@ -189,7 +199,7 @@ Other
 uv run python -m pytest tests/ -q
 ```
 
-Total of 70 tests covering:
+Total of 71 tests covering:
 
 | Test File | Coverage |
 |-----------|----------|
@@ -202,6 +212,8 @@ Total of 70 tests covering:
 | `test_conversation_memory.py` | Dialogue state memory, multi-turn NLP context |
 | `test_calendar_notify.py` | Cross-user push notifications |
 | `test_notification.py` | Scheduled reminder triggering |
+| `test_calendar_create.py` | Calendar event creation, end-time defaults |
+| `test_config.py` | Settings loading, required field validation |
 
 ### License
 
@@ -227,6 +239,7 @@ MIT
 
 - **通知設定**：「關閉通知」「開啟通知」——自由開關行程異動通知
 - **API 速率限制**：每位用戶每分鐘最多 10 次 Gemini API 呼叫（滑動視窗演算法），防止 API 濫用
+- **行事曆增量同步**：Cloud Scheduler 每 5 分鐘觸發 `/internal/sync`，透過 `syncToken` 偵測外部 Google Calendar 變動並同步更新 Firestore 提醒。
 ### 系統架構
 
 **共享行事曆模式**：以 Service Account 一次性授權存取共享 Google Calendar，所有用戶共用同一個行事曆，無需個別登入。
@@ -236,13 +249,17 @@ LINE User（任何人）
    │  傳送訊息
    ▼
 Cloud Run (FastAPI)
-   └── POST /webhook
+   ├── POST /webhook
+   │     │
+   │     ├── Gemini API          (自然語言解析)
+   │     ├── Google Calendar API (共享行程 CRUD)
+   │     └── Cloud Firestore     (對話狀態、提醒、用戶登記)
+   │            │
+   │            └── Secret Manager (API 金鑰、Service Account 金鑰)
+   │
+   └── POST /internal/sync  ← Cloud Scheduler（每 5 分鐘）
          │
-         ├── Gemini API          (自然語言解析)
-         ├── Google Calendar API (共享行程 CRUD)
-         └── Cloud Firestore     (對話狀態、提醒、用戶登記)
-                │
-                └── Secret Manager (API 金鑰、Service Account 金鑰)
+         └── Google Calendar API (增量 syncToken 同步 → Firestore 提醒)
 ```
 
 | 元件 | 技術 |
@@ -320,11 +337,13 @@ cat-lendar/
 │   ├── config.py               # pydantic-settings 設定
 │   ├── routes/
 │   │   ├── webhook.py          # POST /webhook（LINE 事件接收）
-│   │   └── notify.py           # POST /notify（到期提醒排程）
+│   │   ├── notify.py           # POST /notify（到期提醒排程）
+│   │   └── sync.py             # POST /internal/sync（Calendar → Firestore 增量同步）
 │   ├── services/
 │   │   ├── nlp.py              # Gemini API 意圖解析
 │   │   ├── calendar.py         # Google Calendar CRUD
 │   │   ├── calendar_notify.py  # 跨用戶異動推播通知
+│   │   ├── calendar_sync.py    # 透過 syncToken 增量同步
 │   │   ├── notification.py     # 行程提醒發送
 │   │   ├── line_messaging.py   # LINE reply / push / get_display_name
 │   │   └── auth.py             # 共享 Google Credentials
@@ -341,10 +360,13 @@ cat-lendar/
 │       └── i18n.py             # 繁體中文訊息模板
 ├── scripts/
 │   ├── setup_service_account.sh # 一次性設定 Service Account
+│   ├── setup_gcp.sh            # 一次性 GCP 基礎設施設定
+│   ├── setup_scheduler.sh      # Cloud Scheduler 任務（提醒 + 同步）
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
-│   └── update_secret.sh        # 更新 Secret Manager 密鑰
-├── tests/                      # 70 個測試，asyncio_mode=auto
+│   ├── update_secret.sh        # 更新 Secret Manager 密鑰
+│   └── sync_push.py            # 一次性腳本：推播本週行事曆摘要到 LINE
+├── tests/                      # 71 個測試，asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
 └── DEPLOYMENT.md               # 完整部署指南
@@ -393,7 +415,7 @@ cat-lendar/
 uv run python -m pytest tests/ -q
 ```
 
-共 70 個測試，涵蓋：
+共 71 個測試，涵蓋：
 
 | 測試檔案 | 涵蓋範圍 |
 |---------|---------|
@@ -406,6 +428,8 @@ uv run python -m pytest tests/ -q
 | `test_conversation_memory.py` | 對話記憶讀寫、NLP 多輪上下文 |
 | `test_calendar_notify.py` | 跨用戶異動推播通知 |
 | `test_notification.py` | 行程到期提醒發送 |
+| `test_calendar_create.py` | 行事曆事件建立、結束時間預設 |
+| `test_config.py` | Settings 載入、必填欄位驗證 |
 
 ### License
 
