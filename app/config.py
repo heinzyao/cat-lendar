@@ -24,24 +24,27 @@
 Singleton 設計：
 settings 在模組載入時建立一次，所有模組 import 同一個物件
 """
-from pydantic_settings import BaseSettings
+from typing import ClassVar, Self
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # LINE Bot 憑證
-    line_channel_secret: str        # HMAC-SHA256 簽名驗證用
-    line_channel_access_token: str  # Reply API / Push API 授權 token
+    line_channel_secret: str = ""
+    line_channel_access_token: str = ""
 
     # Gemini API
-    gemini_api_key: str
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"  # 用於 NLP 意圖解析的模型版本
 
     # Google Service Account 憑證（Shared Calendar 架構）
     google_service_account_json: str = ""   # Service Account JSON 金鑰（完整 JSON 字串）
-    google_calendar_id: str = "primary"     # 目標日曆 ID（"primary" 代表預設日曆）
+    google_calendar_id: str = ""
 
     # 加密（Fernet 對稱加密）
-    encryption_key: str  # base64-encoded 32-byte key，使用 cryptography.fernet.Fernet.generate_key() 生成
+    encryption_key: str = ""
 
     # GCP 設定
     gcp_project_id: str = ""  # Firestore 所在的 GCP 專案 ID（空字串時使用 ADC 預設）
@@ -56,7 +59,26 @@ class Settings(BaseSettings):
     conversation_history_ttl_seconds: int = 1800  # 對話記憶有效期（30 分鐘）
     max_conversation_turns: int = 10      # 傳給 Gemini 的最大對話輪次
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    @model_validator(mode="after")
+    def require_env_values(self) -> Self:
+        missing = [
+            name
+            for name, value in (
+                ("LINE_CHANNEL_SECRET", self.line_channel_secret),
+                ("LINE_CHANNEL_ACCESS_TOKEN", self.line_channel_access_token),
+                ("GEMINI_API_KEY", self.gemini_api_key),
+                ("GOOGLE_CALENDAR_ID", self.google_calendar_id),
+                ("ENCRYPTION_KEY", self.encryption_key),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"Missing required settings: {', '.join(missing)}")
+        return self
 
 
 # Singleton：全域共享同一個 Settings 實例

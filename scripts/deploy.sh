@@ -18,11 +18,13 @@ step()    { echo -e "\n${BOLD}▶ $*${RESET}"; }
 PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${GCP_REGION:-asia-east1}"
 SERVICE_NAME="${SERVICE_NAME:-line-calendar-bot}"
+CALENDAR_ID="${GOOGLE_CALENDAR_ID:-}"
 REPO="line-bot"
 IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE_NAME}"
 SA_EMAIL="${SERVICE_NAME}-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 
 [[ -z "$PROJECT_ID" ]] && error "請設定 GCP_PROJECT_ID 或執行 gcloud config set project"
+[[ -z "$CALENDAR_ID" ]] && error "請設定 GOOGLE_CALENDAR_ID（共享日曆 ID）"
 
 # 用 git short hash 當 image tag，fallback 到 timestamp
 if git rev-parse --git-dir >/dev/null 2>&1; then
@@ -93,7 +95,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --set-secrets="$SET_SECRETS" \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GOOGLE_CALENDAR_ID=${CALENDAR_ID}" \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=10 \

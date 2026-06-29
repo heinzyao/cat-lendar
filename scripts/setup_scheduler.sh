@@ -5,6 +5,7 @@ set -euo pipefail
 PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project)}"
 REGION="${REGION:-asia-east1}"
 SERVICE_NAME="${SERVICE_NAME:-line-calendar-bot}"
+SECRET_NAME="NOTIFY_SECRET"
 
 # 取得 Cloud Run 服務 URL
 SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
@@ -23,10 +24,10 @@ echo "📡 Cloud Run URL: $SERVICE_URL"
 echo "🔐 請輸入 NOTIFY_SECRET（直接 Enter 跳過若已存在）："
 read -r SECRET_VALUE
 if [[ -n "$SECRET_VALUE" ]]; then
-  echo -n "$SECRET_VALUE" | gcloud secrets create notify-secret \
+  echo -n "$SECRET_VALUE" | gcloud secrets create "$SECRET_NAME" \
     --project="$PROJECT_ID" \
     --data-file=- 2>/dev/null || \
-  echo -n "$SECRET_VALUE" | gcloud secrets versions add notify-secret \
+  echo -n "$SECRET_VALUE" | gcloud secrets versions add "$SECRET_NAME" \
     --project="$PROJECT_ID" \
     --data-file=-
   echo "✅ NOTIFY_SECRET 已更新"
@@ -34,38 +35,45 @@ fi
 
 # 取得 secret 值（用於 Scheduler header）
 NOTIFY_SECRET=$(gcloud secrets versions access latest \
-  --secret=notify-secret \
+  --secret="$SECRET_NAME" \
   --project="$PROJECT_ID")
 
-# 建立 Cloud Scheduler job（若已存在則更新）
-JOB_NAME="notify-job"
-if gcloud scheduler jobs describe "$JOB_NAME" \
-  --location="$REGION" \
-  --project="$PROJECT_ID" &>/dev/null; then
-  echo "🔄 更新 Scheduler job..."
-  gcloud scheduler jobs update http "$JOB_NAME" \
+upsert_job() {
+  local job_name="$1"
+  local schedule="$2"
+  local path="$3"
+
+  if gcloud scheduler jobs describe "$job_name" \
     --location="$REGION" \
-    --project="$PROJECT_ID" \
-    --schedule="* * * * *" \
-    --uri="${SERVICE_URL}/internal/notify" \
-    --http-method=POST \
-    --headers="X-Internal-Secret=${NOTIFY_SECRET}" \
-    --time-zone="Asia/Taipei"
-else
-  echo "➕ 建立 Scheduler job..."
-  gcloud scheduler jobs create http "$JOB_NAME" \
-    --location="$REGION" \
-    --project="$PROJECT_ID" \
-    --schedule="* * * * *" \
-    --uri="${SERVICE_URL}/internal/notify" \
-    --http-method=POST \
-    --headers="X-Internal-Secret=${NOTIFY_SECRET}" \
-    --time-zone="Asia/Taipei"
-fi
+    --project="$PROJECT_ID" &>/dev/null; then
+    echo "🔄 更新 Scheduler job: $job_name"
+    gcloud scheduler jobs update http "$job_name" \
+      --location="$REGION" \
+      --project="$PROJECT_ID" \
+      --schedule="$schedule" \
+      --uri="${SERVICE_URL}${path}" \
+      --http-method=POST \
+      --headers="X-Internal-Secret=${NOTIFY_SECRET}" \
+      --time-zone="Asia/Taipei"
+  else
+    echo "➕ 建立 Scheduler job: $job_name"
+    gcloud scheduler jobs create http "$job_name" \
+      --location="$REGION" \
+      --project="$PROJECT_ID" \
+      --schedule="$schedule" \
+      --uri="${SERVICE_URL}${path}" \
+      --http-method=POST \
+      --headers="X-Internal-Secret=${NOTIFY_SECRET}" \
+      --time-zone="Asia/Taipei"
+  fi
+}
+
+upsert_job "notify-job" "* * * * *" "/internal/notify"
+upsert_job "sync-job" "*/5 * * * *" "/internal/sync"
 
 echo "✅ Cloud Scheduler 設定完成！"
 echo ""
 echo "📋 更新 Cloud Run 環境變數："
 echo "  gcloud run services update $SERVICE_NAME \\"
 echo "    --region=$REGION \\"
-echo "    --update-env-vars NOTIFY_SECRET=\$(gcloud secrets versions access latest --secret=notify-secret)"
+echo "    --update-env-vars NOTIFY_SECRET=\$(gcloud secrets versions access latest --secret=$SECRET_NAME)"

@@ -88,7 +88,7 @@ Please refer to [DEPLOYMENT.md](DEPLOYMENT.md) for detailed steps.
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
 | `GEMINI_API_KEY` | Gemini API Key |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON key (Run `scripts/setup_service_account.sh` for one-time setup) |
-| `GOOGLE_CALENDAR_ID` | Target Calendar ID (Default: `primary`) |
+| `GOOGLE_CALENDAR_ID` | Shared Calendar ID granted to the service account |
 | `ENCRYPTION_KEY` | AES-256-GCM encryption key (base64, 32 bytes) |
 | `GCP_PROJECT_ID` | GCP Project ID |
 | `NOTIFY_SECRET` | `X-Internal-Secret` header for `/internal/*` endpoints (called by Cloud Scheduler) |
@@ -293,7 +293,7 @@ bash scripts/deploy.sh
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Channel Access Token |
 | `GEMINI_API_KEY` | Gemini API 金鑰 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 金鑰（執行 `scripts/setup_service_account.sh` 一次性設定） |
-| `GOOGLE_CALENDAR_ID` | 目標行事曆 ID（預設 `primary`） |
+| `GOOGLE_CALENDAR_ID` | 已分享給 service account 的共享行事曆 ID |
 | `ENCRYPTION_KEY` | AES-256-GCM 加密金鑰（base64，32 bytes） |
 | `GCP_PROJECT_ID` | GCP 專案 ID |
 | `NOTIFY_SECRET` | `/internal/*` 端點的 `X-Internal-Secret` 驗證標頭（由 Cloud Scheduler 呼叫） |
