@@ -203,16 +203,6 @@ Total of 70 tests covering:
 | `test_calendar_notify.py` | Cross-user push notifications |
 | `test_notification.py` | Scheduled reminder triggering |
 
-### Deployed Services
-
-| Item | Value |
-|------|-------|
-| GCP Project | `amateur-intelligence-service` |
-| Service URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
-| Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
-| Region | `asia-east1` |
-| Latest Revision | `line-calendar-bot-00033-s87` |
-
 ### License
 
 MIT
@@ -416,16 +406,6 @@ uv run python -m pytest tests/ -q
 | `test_conversation_memory.py` | 對話記憶讀寫、NLP 多輪上下文 |
 | `test_calendar_notify.py` | 跨用戶異動推播通知 |
 | `test_notification.py` | 行程到期提醒發送 |
-
-### 已部署服務
-
-| 項目 | 值 |
-|------|-----|
-| GCP 專案 | `amateur-intelligence-service` |
-| 服務 URL | `https://line-calendar-bot-132888979367.asia-east1.run.app` |
-| Webhook URL | `https://line-calendar-bot-132888979367.asia-east1.run.app/webhook` |
-| 區域 | `asia-east1` |
-| 最新 Revision | `line-calendar-bot-00019-2f6` |
 
 ### License
 
