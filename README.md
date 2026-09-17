@@ -49,7 +49,7 @@ Cloud Run (FastAPI)
 |-----------|------------|
 | Language / Framework | Python 3.12 + FastAPI |
 | Deployment | Google Cloud Run (asia-east1) |
-| NLP | Gemini API (gemini-2.5-flash) |
+| NLP | Gemini API (gemini-3.8-flash) |
 | Database | Cloud Firestore |
 | Secrets | Google Secret Manager |
 | Package Manager| uv |
@@ -266,7 +266,7 @@ Cloud Run (FastAPI)
 |------|------|
 | 語言 / 框架 | Python 3.12 + FastAPI |
 | 部署平台 | Google Cloud Run (asia-east1) |
-| NLP | Gemini API (gemini-2.5-flash) |
+| NLP | Gemini API (gemini-3.8-flash) |
 | 資料庫 | Cloud Firestore |
 | 密鑰管理 | Google Secret Manager |
 | 套件管理 | uv |

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"  # 用於 NLP 意圖解析的模型版本
+    gemini_model: str = "gemini-3.8-flash"  # 用於 NLP 意圖解析的模型版本
 
     # Google Service Account 憑證（Shared Calendar 架構）
     google_service_account_json: str = ""   # Service Account JSON 金鑰（完整 JSON 字串）
