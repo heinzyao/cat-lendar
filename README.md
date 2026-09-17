@@ -217,7 +217,7 @@ Total of 71 tests covering:
 
 ### License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ---
 
@@ -236,10 +236,10 @@ MIT
 - **預設提醒**：「設定預設提醒 30 分鐘前」（所有新行程自動套用）
 - **跨用戶通知**：任何人新增／修改／刪除行程時，自動推播通知其他用戶
 - **對話記憶**：多輪對話上下文理解，支援代名詞與省略句
-
 - **通知設定**：「關閉通知」「開啟通知」——自由開關行程異動通知
 - **API 速率限制**：每位用戶每分鐘最多 10 次 Gemini API 呼叫（滑動視窗演算法），防止 API 濫用
 - **行事曆增量同步**：Cloud Scheduler 每 5 分鐘觸發 `/internal/sync`，透過 `syncToken` 偵測外部 Google Calendar 變動並同步更新 Firestore 提醒。
+
 ### 系統架構
 
 **共享行事曆模式**：以 Service Account 一次性授權存取共享 Google Calendar，所有用戶共用同一個行事曆，無需個別登入。
@@ -433,4 +433,4 @@ uv run python -m pytest tests/ -q
 
 ### License
 
-MIT
+MIT — see [LICENSE](LICENSE).
