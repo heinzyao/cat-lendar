@@ -74,16 +74,3 @@ def test_event_details_optional_fields():
     assert details.location is None
     assert details.description is None
     assert details.all_day is False
-
-
-def test_nlp_strip_code_fence():
-    """測試 NLP 模組的 code fence 清理邏輯（不呼叫 API）"""
-    raw = '```json\n{"action": "unknown", "confidence": 0.0}\n```'
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        if raw.endswith("```"):
-            raw = raw[: raw.rfind("```")]
-        raw = raw.strip()
-    import json
-    data = json.loads(raw)
-    assert data["action"] == "unknown"

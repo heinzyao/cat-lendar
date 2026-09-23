@@ -10,8 +10,10 @@
 
 Prompt 設計策略
 ---------------
-1. 系統 Prompt 注入當前時間與時區：讓 Gemini 能正確推算「明天」「這週」等相對時間
-2. 嚴格要求只輸出 JSON：避免 Gemini 在 JSON 前後加說明文字（雖有 markdown fence 處理）
+1. 輸出格式交給協議層：_get_model() 的 response_mime_type="application/json"
+   已保證回傳是 JSON，prompt 不再重複要求「只輸出 JSON」
+2. 易變內容排在 prompt 尾端：當前時間、時區、原始行程都放最後，
+   前面的 schema 與規則才能構成穩定的可快取前綴
 3. 推定規則：要求 Gemini 盡量推定不明確的資訊，僅在真正無法判斷時才要求澄清，
    以降低使用者操作成本
 4. 二階段解析：update 操作先用 parse_intent() 定位行程，再用 parse_update_details()
@@ -120,6 +122,8 @@ def _build_system_prompt(has_history: bool = False) -> str:
 
     設計理由：
     - 注入當前時間：Gemini 無法自行取得當前時間，必須由我們傳入才能正確處理「明天」等相對時間
+    - 時間放在最後：快取是前綴比對，把每分鐘都變的時間戳放在 schema 與規則之前，
+      會讓整段前綴每分鐘失效
     - has_history：有對話記憶時追加 history_note，提醒 Gemini 善用上下文
       （無記憶時省略，避免讓 Gemini 誤以為有記憶卻找不到）
     - 動態建構而非靜態常數：因需嵌入每次呼叫時的即時時間，無法預先建構
@@ -131,10 +135,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
         history_note = "\n\n注意：對話歷史已提供在先前的 messages 中。請參考對話上下文來理解代名詞（如「它」「那個」）、省略（如「改到明天」指的是前面提到的行程）、以及後續補充資訊（如追加地點、修改時間）。"
     return f"""你是一個 Google 日曆助手，負責解析使用者的自然語言指令並轉換為結構化操作。
 
-目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
-時區：{settings.timezone}
-
-請將使用者的訊息解析為以下 JSON 格式，不要輸出其他文字：
+請將使用者的訊息解析為以下 JSON 格式：
 {{
   "action": "create" | "query" | "update" | "delete" | "set_reminder" | "unknown",
   "event_details": {{
@@ -168,8 +169,11 @@ def _build_system_prompt(has_history: bool = False) -> str:
    - 對話上下文可推斷時直接引用
    推定後在 clarification_needed 簡述推定內容，confidence 設 0.7 以上。
    僅在完全無法判斷意圖時才設 confidence < 0.5。
-7. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。
-8. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}"""
+7. 欄位為 null 時可省略。
+8. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}
+
+目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
+時區：{settings.timezone}"""
 
 
 async def parse_intent(
@@ -185,8 +189,6 @@ async def parse_intent(
     - 當前訊息透過 chat.send_message_async() 或 generate_content_async() 傳入
 
     錯誤處理策略：
-    - Gemini 有時會在 JSON 前後加入 markdown code fence（```json ... ```），
-      需手動剝除，否則 json.loads() 會失敗
     - JSON 解析失敗時回傳 action=unknown + confidence=0，觸發上層的澄清詢問流程
     - 不直接 raise 例外，確保每個使用者訊息都有合理的回應
     """
@@ -210,12 +212,6 @@ async def parse_intent(
         response = await model.generate_content_async(user_message)
 
     raw = response.text.strip()
-    # 去掉可能的 markdown code fence（```json ... ``` 或 ``` ... ```）
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        if raw.endswith("```"):
-            raw = raw[: raw.rfind("```")]
-        raw = raw.strip()
 
     try:
         data = json.loads(raw)
@@ -293,12 +289,6 @@ async def parse_update_details(
 
     system_prompt = f"""你是一個日曆助手，負責解析使用者想如何修改一個已知的行程。
 
-目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
-時區：{settings.timezone}
-
-原始行程：
-{event_info}
-
 請根據使用者的指令，只輸出需要更新的欄位（JSON 格式），不變的欄位省略：
 {{
   "summary": "新名稱（可選）",
@@ -315,7 +305,13 @@ async def parse_update_details(
 3. 「延後/提前 N 小時/分鐘」→ 開始和結束各平移相同時間
 4. 「改成 N 小時/分鐘」→ 結束 = 原開始 + N 小時/分鐘（開始不變）
 5. 若只改名稱/地點/描述，時間欄位省略
-6. 只輸出 JSON，不要有其他文字。欄位為 null 時可省略。"""
+6. 欄位為 null 時可省略。
+
+目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
+時區：{settings.timezone}
+
+原始行程：
+{event_info}"""
 
     model = _get_model(system_prompt)
 
@@ -326,11 +322,6 @@ async def parse_update_details(
         return None
 
     raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        if raw.endswith("```"):
-            raw = raw[: raw.rfind("```")]
-        raw = raw.strip()
 
     try:
         data = json.loads(raw)
