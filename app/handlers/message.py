@@ -47,6 +47,8 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from linebot.v3.messaging.exceptions import ApiException
+
 from app.models.intent import ActionType, CalendarIntent, EventDetails, TimeRange
 from app.models.user import UserState
 from app.services import auth, calendar, calendar_notify, line_messaging, nlp
@@ -176,6 +178,8 @@ async def _execute_intent(
     設計理由：
     - 集中 try/except 在此層：所有日曆操作異常都在這裡攔截，
       下層函式可放心 raise 而不擔心未處理的例外導致 LINE 回覆超時
+    - 回覆失敗與日曆失敗分開攔截：兩者的處置不同（見下方 except），
+      混在一起會讓 log 指向錯誤的元件
     - 回傳 str：回覆訊息文字，用於寫入對話記憶（供下一輪參考）
     """
     try:
@@ -193,6 +197,13 @@ async def _execute_intent(
             # action == UNKNOWN，理論上不應進入此分支（confidence < 0.5 已過濾）
             await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
             return i18n.PARSE_ERROR
+    except ApiException:
+        # 各 _handle_* 內部自己會 reply，所以這裡攔到的 ApiException 代表
+        # 「日曆操作成功、但回覆送不出去」（最常見：replyToken 過期或已用過）。
+        # 不能再 reply 一次——同一個 token 只會再失敗一遍，還會把真正的錯因
+        # 蓋成 CALENDAR_ERROR，讓日後查 log 時分不出是日曆壞了還是回覆壞了。
+        logger.exception("LINE reply failed")
+        return i18n.CALENDAR_ERROR
     except Exception:
         logger.exception("Calendar operation failed")
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)

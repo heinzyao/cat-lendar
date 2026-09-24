@@ -190,3 +190,53 @@ async def test_handle_update_appends_assumption_note():
         result = await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
         assert "\n\n💡 已推定為今天的週會" in result
+
+
+# ── _execute_intent：回覆失敗 vs 日曆失敗，要分開攔截 ──
+
+
+@pytest.mark.asyncio
+async def test_execute_intent_reply_failure_does_not_retry_reply():
+    """ApiException 代表回覆送不出去（如 replyToken 過期），不該再 reply 一次。
+
+    舊行為把它和日曆錯誤混在同一個 except，log 會寫成
+    「Calendar operation failed」，真的日曆故障時分不出是哪邊壞的。
+    """
+    from linebot.v3.messaging.exceptions import ApiException
+
+    from app.handlers.message import _execute_intent
+
+    intent = _make_intent()
+    intent.action = ActionType.QUERY
+
+    with (
+        patch("app.handlers.message._handle_query",
+              AsyncMock(side_effect=ApiException(status=400))),
+        patch("app.handlers.message.line_messaging") as mock_msg,
+    ):
+        mock_msg.reply_text = AsyncMock()
+        result = await _execute_intent(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
+
+    # 同一個 token 再送只會再失敗一次，所以完全不該重試
+    mock_msg.reply_text.assert_not_awaited()
+    assert result  # 仍要回傳字串寫入對話記憶
+
+
+@pytest.mark.asyncio
+async def test_execute_intent_calendar_failure_still_replies():
+    """非 ApiException（日曆 / 其他錯誤）仍要通知使用者。"""
+    from app.handlers.message import _execute_intent
+
+    intent = _make_intent()
+    intent.action = ActionType.QUERY
+
+    with (
+        patch("app.handlers.message._handle_query",
+              AsyncMock(side_effect=RuntimeError("calendar exploded"))),
+        patch("app.handlers.message.line_messaging") as mock_msg,
+    ):
+        mock_msg.reply_text = AsyncMock()
+        result = await _execute_intent(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
+
+    mock_msg.reply_text.assert_awaited_once()
+    assert result
