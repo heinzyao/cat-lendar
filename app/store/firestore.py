@@ -13,7 +13,7 @@
 ├──────────────────┼────────────────────────────────────────────────┤
 │ users            │ 已互動用戶登記（first_seen, last_seen）          │
 │ user_states      │ 多筆行程選擇的中間狀態（帶 expires_at TTL）      │
-│ conversation_history│ 近期對話記憶（供 Claude 多輪理解上下文）      │
+│ conversation_history│ 近期對話記憶（供模型多輪理解上下文）          │
 │ reminders        │ 行程提醒記錄（reminder_at <= now 時推播）        │
 │ user_prefs       │ 使用者偏好（預設提醒分鐘數、通知開關）           │
 └──────────────────┴────────────────────────────────────────────────┘

@@ -18,7 +18,7 @@ format_event_time 的顯示邏輯：
 - 全天事件（date 格式）：「2026-03-08 – 2026-03-09」（直接顯示 date string）
   datetime.fromisoformat 無法解析純 date string 時 fallback 至此
 
-weekday_name 使用中文星期名稱供 Claude system prompt 與使用者回覆使用
+weekday_name 使用中文星期名稱供 system prompt 與使用者回覆使用
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def format_event_time(start: str, end: str) -> str:
 
 
 def weekday_name(dt: datetime) -> str:
-    """取得中文星期名稱（一～日），用於 Claude system prompt 與使用者回覆。
+    """取得中文星期名稱（一～日），用於 system prompt 與使用者回覆。
 
     例：dt.weekday() == 0 → 「一」（週一）
     """

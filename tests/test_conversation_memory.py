@@ -1,4 +1,4 @@
-"""對話記憶功能測試（mock Firestore + Claude API）"""
+"""對話記憶功能測試（mock Firestore + Gemini）"""
 
 import os
 import base64

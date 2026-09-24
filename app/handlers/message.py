@@ -9,7 +9,7 @@
   handle_message()          ← 主入口：前置處理 + 意圖分派
        ├─ 特殊指令（說明/提醒設定/通知開關）  ← 不走 NLP，直接處理
        ├─ 選擇狀態（等待使用者選第幾筆）       ← 中斷狀態機
-       └─ Claude NLP 解析 → _execute_intent() ← 一般自然語言輸入
+       └─ Gemini NLP 解析 → _execute_intent() ← 一般自然語言輸入
               ├─ CREATE  → _handle_create()
               ├─ QUERY   → _handle_query()
               ├─ UPDATE  → _handle_update()
@@ -24,7 +24,7 @@
 
 2. 對話記憶（conversation_history）：
    每次呼叫 nlp.parse_intent() 前先讀取記憶，
-   讓 Claude 理解「改成明天」等依賴前文的指令
+   讓模型理解「改成明天」等依賴前文的指令
 
 3. 多筆事件的選擇狀態機：
    當 update/delete 找到多筆符合的行程時，先將候選存入 Firestore（UserState），
@@ -32,7 +32,7 @@
    這是有狀態對話（stateful conversation）的設計，比重新呼叫 NLP 更可靠
 
 4. confidence 門檻 0.5：
-   低於此值表示 Claude 無法判斷意圖，改為詢問澄清，避免誤操作行程
+   低於此值表示模型無法判斷意圖，改為詢問澄清，避免誤操作行程
 
 5. 二階段 update 解析：
    update 操作先以 parse_intent() 定位行程（第一階段），
@@ -59,10 +59,10 @@ logger = logging.getLogger(__name__)
 
 
 def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
-    """在回覆訊息末尾附加 Claude 的推定說明（若有）。
+    """在回覆訊息末尾附加模型的推定說明（若有）。
 
     設計理由：
-    - Claude 推定不明確資訊後會在 clarification_needed 說明推定內容
+    - 模型推定不明確資訊後會在 clarification_needed 說明推定內容
       （例如：「已假設時間為今日下午 3 點」）
     - 附加在訊息末尾而非另外詢問，降低使用者操作負擔，同時保持透明度
     - 使用 💡 圖示視覺區隔推定說明與主要回覆
@@ -134,10 +134,10 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
 
     # ── NLP 解析（一般日程操作）──
 
-    # 讀取對話記憶，讓 Claude 理解多輪對話的上下文（如代名詞指涉）
+    # 讀取對話記憶，讓模型理解多輪對話的上下文（如代名詞指涉）
     conversation_history = await store.get_conversation_history(user_id)
 
-    # 呼叫 Claude API 解析自然語言意圖
+    # 呼叫 Gemini 解析自然語言意圖
     try:
         intent = await nlp.parse_intent(text, conversation_history, user_id=user_id)
     except RateLimitExceeded as e:
@@ -148,7 +148,7 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
         return
 
-    # confidence < 0.5 表示 Claude 無法判斷意圖，向使用者要求澄清
+    # confidence < 0.5 表示模型無法判斷意圖，向使用者要求澄清
     # 設計理由：低信心直接執行可能導致誤操作行程，寧可多問一次
     if intent.confidence < 0.5:
         msg = intent.clarification_needed or i18n.PARSE_ERROR
@@ -158,7 +158,7 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         return
 
     reply_msg = await _execute_intent(user_id, reply_token, intent, credentials)
-    # 無論成功或失敗都寫入對話記憶，讓下一輪 Claude 知道此次操作的結果
+    # 無論成功或失敗都寫入對話記憶，讓下一輪對話知道此次操作的結果
     await store.append_conversation_turn(user_id, text, reply_msg)
 
 
@@ -176,7 +176,7 @@ async def _execute_intent(
     設計理由：
     - 集中 try/except 在此層：所有日曆操作異常都在這裡攔截，
       下層函式可放心 raise 而不擔心未處理的例外導致 LINE 回覆超時
-    - 回傳 str：回覆訊息文字，用於寫入對話記憶（供下一輪 Claude 參考）
+    - 回傳 str：回覆訊息文字，用於寫入對話記憶（供下一輪參考）
     """
     try:
         if intent.action == ActionType.CREATE:
@@ -208,13 +208,13 @@ async def _handle_create(
     """處理建立行程意圖。
 
     提醒優先級：
-    1. Claude 從訊息中提取的提醒設定（details.reminder_minutes）
+    1. 模型從訊息中提取的提醒設定（details.reminder_minutes）
     2. 使用者的預設提醒設定（Firestore user_prefs.default_reminder_minutes）
     3. 無提醒（Google Calendar 使用日曆預設值）
     """
     details = intent.event_details
 
-    # 提醒設定：優先使用 Claude 從訊息提取的值，若無則使用使用者預設設定
+    # 提醒設定：優先使用模型從訊息提取的值，若無則使用使用者預設設定
     reminder_minutes = details.reminder_minutes
     if reminder_minutes is None:
         reminder_minutes = await store.get_default_reminder_minutes(user_id)
@@ -301,7 +301,7 @@ async def _handle_update(
         return reply_msg
 
     if len(events) == 1:
-        # 二次解析：將原始行程資料傳給 Claude，讓它精確計算需更新的欄位
+        # 二次解析：將原始行程資料傳給 Gemini，讓它精確計算需更新的欄位
         update_details = None
         if intent.original_message:
             update_details = await nlp.parse_update_details(intent.original_message, events[0], user_id=user_id)

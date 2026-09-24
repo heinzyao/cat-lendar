@@ -39,13 +39,16 @@ class UserState(BaseModel):
 class ConversationMessage(BaseModel):
     """對話記憶中的單一訊息（一個 user 訊息或一個 assistant 回覆）。
 
-    role 遵循 Claude API 規格：
+    role 是本專案的內部格式（沿用 user/assistant 慣例）：
     - "user"：LINE 使用者發出的訊息
     - "assistant"：Bot 回覆的內容（實際發送給 LINE 的文字）
 
+    Gemini 的角色名稱是 user/model，兩者的轉換在 services/nlp.py 組裝
+    multi-turn history 時進行——存進 Firestore 的一律是這裡的內部格式。
+
     timestamp 用於 TTL 判斷（雖然實際 TTL 由 Firestore 的 updated_at 欄位控制）
     """
-    role: str        # "user" | "assistant"（Claude API 要求的角色名稱）
+    role: str        # "user" | "assistant"（內部格式，送出前轉為 Gemini 的 user/model）
     content: str     # 訊息內容
     timestamp: datetime  # 訊息時間（UTC）
 

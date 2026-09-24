@@ -47,9 +47,9 @@
 真正的轉換與驗證發生在 API 端。所以第 3 項與第 8 項都是打真實 API，
 這是整個遷移唯一無法靠單元測試覆蓋的風險。
 
-**未做：其餘模組的過期指涉。** `app/handlers/message.py`、`app/models/user.py`、
-`app/utils/datetime_utils.py` 等處仍有約 20 處註解寫「Claude」，是 2026-05-19
-Claude→Gemini 遷移留下的，與本次無關。`app/models/intent.py` 因為本來就要改才順手清掉。
+**其餘模組的過期指涉已一併清除。** `app/handlers/message.py` 等 7 個檔案共 21 處
+註解寫「Claude」，是 2026-05-19 Claude→Gemini 遷移留下的，已在後續 commit 清掉。
+`AGENT.md` 的「Claude Code」指的是編碼工具而非 NLP 模型，刻意保留。
 
 ## Production 驗證結果（revision 00048-r89）
 

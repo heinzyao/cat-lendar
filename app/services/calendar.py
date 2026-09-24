@@ -90,7 +90,7 @@ async def create_event(
 
     提醒設定（effective_minutes）：
     - 優先使用傳入的 reminder_minutes（由 handler 合併預設值後傳入）
-    - fallback 至 details.reminder_minutes（Claude 從訊息提取）
+    - fallback 至 details.reminder_minutes（模型從訊息提取）
     - 若兩者皆 None，使用 Google Calendar 的日曆預設提醒
 
     為何同時寫 Firestore reminder？

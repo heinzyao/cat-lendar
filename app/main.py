@@ -15,7 +15,7 @@
     │            │            │
  services/    services/    store/
   nlp.py     calendar.py  firestore.py
- (Claude AI)  (GCal API)   (GCP NoSQL)
+ (Gemini API) (GCal API)   (GCP NoSQL)
 
 設計理由：
 - FastAPI 選用：原生支援 async/await，與 Google Cloud 客戶端非同步操作契合，
