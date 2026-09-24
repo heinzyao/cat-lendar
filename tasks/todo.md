@@ -20,7 +20,7 @@
 - [x] 6. 改寫測試（`test_nlp_update.py`、`test_conversation_memory.py`）
 - [x] 7. 全測通過（69 passed）
 - [x] 8. 真實 API 端對端驗證（三條路徑）
-- [ ] 9. 部署後以簽章模擬 webhook 驗 production
+- [x] 9. 部署後以簽章模擬 webhook 驗 production（revision `00048-r89`，image tag `965db3f`）
 
 ## Review
 
@@ -50,3 +50,28 @@
 **未做：其餘模組的過期指涉。** `app/handlers/message.py`、`app/models/user.py`、
 `app/utils/datetime_utils.py` 等處仍有約 20 處註解寫「Claude」，是 2026-05-19
 Claude→Gemini 遷移留下的，與本次無關。`app/models/intent.py` 因為本來就要改才順手清掉。
+
+## Production 驗證結果（revision 00048-r89）
+
+新相依在 Cloud Run 裝得起來也跑得起來：`ImportError` / `ModuleNotFound` /
+`AttributeError` 與 genai 相關錯誤各 0 次，新程式碼的失敗路徑
+「未回傳合法 payload」觸發 0 次。
+
+送兩則查詢類指令（刻意不送 create/update，避免動到真實日曆），流程都走到
+`_handle_query` 的 reply 那一步才因假 replyToken 失敗。能走到那裡即代表
+`parse_intent` 產出了合法的 `action=query` intent（confidence ≥ 0.5）、
+Google Calendar 查詢也成功，只差把結果送回 LINE。
+
+**驗不到的部分：** 解析出的具體欄位值。本專案不像 diffords 會 log 解析結果，
+而 replyToken 是模擬的，看不到回覆內容。這是簽章模擬 webhook 的天花板，
+最後一段要從真實 LINE 帳號發訊息才能確認。
+
+### 兩個過程中的發現
+
+1. **模擬事件要補 `quoteToken`。** 少了它會被 linebot v3 的 `WebhookParser` 擋掉
+   （log 顯示 `Unknown event type. type=message`），但 HTTP 仍回 200 且只花 0.1 秒——
+   只看狀態碼會誤判成功。本專案走 `WebhookParser`，比 diffords 手寫的 Flask
+   webhook 嚴格，日後寫探測腳本要記得。
+2. **`Calendar operation failed` 這個 log 標籤會誤導。** 實際失敗的是
+   `line_messaging.reply_text`，日曆操作本身成功。將來真的日曆故障時
+   無法從訊息區分兩者，值得改掉（不在本次範圍）。
