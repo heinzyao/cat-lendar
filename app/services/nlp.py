@@ -10,71 +10,71 @@
 
 Prompt 設計策略
 ---------------
-1. 輸出格式交給協議層：_get_model() 的 response_mime_type="application/json"
-   已保證回傳是 JSON，prompt 不再重複要求「只輸出 JSON」
+1. 輸出結構交給協議層：`response_schema` 直接吃 Pydantic 模型，欄位、型別、
+   enum 值都由 API 保證，prompt 只描述「怎麼判斷」，不再描述「長什麼樣子」
 2. 易變內容排在 prompt 尾端：當前時間、時區、原始行程都放最後，
-   前面的 schema 與規則才能構成穩定的可快取前綴
+   前面的規則才能構成穩定的可快取前綴
 3. 推定規則：要求 Gemini 盡量推定不明確的資訊，僅在真正無法判斷時才要求澄清，
    以降低使用者操作成本
 4. 二階段解析：update 操作先用 parse_intent() 定位行程，再用 parse_update_details()
    結合原始行程資料精確計算時間差異（如「延後 30 分鐘」需知道原始時間）
 
 Singleton Client 設計：
-genai.configure() 全局只需呼叫一次；GenerativeModel 依 system_instruction 動態建立
-（system_prompt 含即時時間，無法預先固定）
+`genai.Client` 全局只建一次；system_instruction 含即時時間，逐次呼叫時放在
+`GenerateContentConfig` 裡，不需要為此重建 client。
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections import defaultdict
 
-import google.generativeai as genai
-from google.generativeai.types import HarmBlockThreshold, HarmCategory
+from google import genai
+from google.genai import types
 
 from app.config import settings
-from app.models.intent import CalendarIntent, EventDetails
+from app.models.intent import CalendarIntent, CalendarIntentPayload, EventDetails
 from app.models.user import ConversationMessage
 from app.utils.datetime_utils import now_local, weekday_name
 
 logger = logging.getLogger(__name__)
 
-# genai.configure() 全局只需呼叫一次
-_genai_configured: bool = False
+_client: genai.Client | None = None
 
 # 停用安全過濾：日曆指令不含有害內容，過濾會造成誤封
-_SAFETY_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
+_SAFETY_SETTINGS = [
+    types.SafetySetting(category=c, threshold=types.HarmBlockThreshold.BLOCK_NONE)
+    for c in (
+        types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    )
+]
 
 
-def _ensure_configured() -> None:
-    """確保 genai 已用 API key 初始化（只執行一次）。"""
-    global _genai_configured
-    if not _genai_configured:
-        genai.configure(api_key=settings.gemini_api_key)
-        _genai_configured = True
+def _get_client() -> genai.Client:
+    """取得全局唯一的 genai Client（第一次呼叫時建立）。"""
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.gemini_api_key)
+    return _client
 
 
-def _get_model(system_prompt: str) -> genai.GenerativeModel:
-    """建立含有 system_instruction 的 GenerativeModel 實例。
+def _config(system_prompt: str, schema: type) -> types.GenerateContentConfig:
+    """組出逐次呼叫用的 config。
 
-    Gemini 的 system_instruction 在 model 層設定，而非 messages 層，
-    因此每次 system_prompt 不同（含即時時間）都需建立新實例。
-    response_mime_type="application/json" 在協議層強制 JSON 輸出，
-    避免 Gemini 自行決定改用對話格式回應。
+    response_schema 讓 API 在協議層保證回傳結構，response.parsed 直接是型別化
+    物件，不需要再 json.loads() + model_validate()。
+    我們沒有給 tools，AFC 只會產生警告噪音，明確關掉。
     """
-    _ensure_configured()
-    return genai.GenerativeModel(
-        model_name=settings.gemini_model,
+    return types.GenerateContentConfig(
         system_instruction=system_prompt,
         safety_settings=_SAFETY_SETTINGS,
-        generation_config={"response_mime_type": "application/json"},
+        response_mime_type="application/json",
+        response_schema=schema,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
 
@@ -135,27 +135,6 @@ def _build_system_prompt(has_history: bool = False) -> str:
         history_note = "\n\n注意：對話歷史已提供在先前的 messages 中。請參考對話上下文來理解代名詞（如「它」「那個」）、省略（如「改到明天」指的是前面提到的行程）、以及後續補充資訊（如追加地點、修改時間）。"
     return f"""你是一個 Google 日曆助手，負責解析使用者的自然語言指令並轉換為結構化操作。
 
-請將使用者的訊息解析為以下 JSON 格式：
-{{
-  "action": "create" | "query" | "update" | "delete" | "set_reminder" | "unknown",
-  "event_details": {{
-    "summary": "行程名稱",
-    "start_time": "ISO8601 datetime",
-    "end_time": "ISO8601 datetime",
-    "location": "地點（可選）",
-    "description": "描述（可選）",
-    "all_day": false,
-    "reminder_minutes": 15
-  }},
-  "time_range": {{
-    "start": "ISO8601 datetime",
-    "end": "ISO8601 datetime"
-  }},
-  "search_keyword": "搜尋關鍵字（修改/刪除/設定提醒時用）",
-  "confidence": 0.0-1.0,
-  "clarification_needed": "需要使用者補充的資訊（可選）"
-}}
-
 規則：
 1. create: event_details 必填 summary 和 start_time。若未指定 end_time，預設 1 小時後。若有提及提前提醒，設定 reminder_minutes。
 2. query: time_range 必填。「今天」=今天 00:00~23:59，「這週」=本週一~週日，「明天」=明天整天。
@@ -169,8 +148,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
    - 對話上下文可推斷時直接引用
    推定後在 clarification_needed 簡述推定內容，confidence 設 0.7 以上。
    僅在完全無法判斷意圖時才設 confidence < 0.5。
-7. 欄位為 null 時可省略。
-8. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}
+7. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
 時區：{settings.timezone}"""
@@ -186,45 +164,49 @@ async def parse_intent(
     Multi-turn 設計：
     - conversation_history 以 Gemini chat history 形式傳入，讓模型知道前幾輪對話內容
     - Gemini 角色名稱：user / model（Anthropic 為 user / assistant）
-    - 當前訊息透過 chat.send_message_async() 或 generate_content_async() 傳入
+    - 有歷史走 chats.create()，沒有就直接 models.generate_content()
 
     錯誤處理策略：
-    - JSON 解析失敗時回傳 action=unknown + confidence=0，觸發上層的澄清詢問流程
+    - response.parsed 為 None（被安全過濾擋下、或回傳不符 schema）時，
+      回傳 action=unknown + confidence=0，觸發上層的澄清詢問流程
     - 不直接 raise 例外，確保每個使用者訊息都有合理的回應
     """
     if user_id:
         _check_rate_limit(user_id)
 
     system_prompt = _build_system_prompt(has_history=bool(conversation_history))
-    model = _get_model(system_prompt)
+    config = _config(system_prompt, CalendarIntentPayload)
+    client = _get_client()
 
     # 組裝 multi-turn history：Gemini 角色為 "user" / "model"
-    history: list[dict] = []
-    if conversation_history:
-        for msg in conversation_history:
-            role = "model" if msg.role == "assistant" else "user"
-            history.append({"role": role, "parts": msg.content})
+    history = [
+        types.Content(
+            role="model" if msg.role == "assistant" else "user",
+            parts=[types.Part(text=msg.content)],
+        )
+        for msg in (conversation_history or [])
+    ]
 
     if history:
-        chat = model.start_chat(history=history)
-        response = await chat.send_message_async(user_message)
+        chat = client.aio.chats.create(
+            model=settings.gemini_model, config=config, history=history
+        )
+        response = await chat.send_message(user_message)
     else:
-        response = await model.generate_content_async(user_message)
+        response = await client.aio.models.generate_content(
+            model=settings.gemini_model, contents=user_message, config=config
+        )
 
-    raw = response.text.strip()
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.error("Gemini 回傳非 JSON: %s", raw)
+    payload = response.parsed
+    if not isinstance(payload, CalendarIntentPayload):
+        logger.error("Gemini 未回傳合法 payload: %s", (response.text or "")[:300])
         return CalendarIntent(
             action="unknown",
             confidence=0.0,
             clarification_needed="無法解析指令",
         )
 
-    intent = CalendarIntent.model_validate(data)
-    return intent.model_copy(update={"original_message": user_message})
+    return CalendarIntent(**payload.model_dump(), original_message=user_message)
 
 
 def _format_event_for_prompt(event: dict) -> str:
@@ -289,23 +271,14 @@ async def parse_update_details(
 
     system_prompt = f"""你是一個日曆助手，負責解析使用者想如何修改一個已知的行程。
 
-請根據使用者的指令，只輸出需要更新的欄位（JSON 格式），不變的欄位省略：
-{{
-  "summary": "新名稱（可選）",
-  "start_time": "ISO8601 datetime（可選）",
-  "end_time": "ISO8601 datetime（可選）",
-  "location": "地點（可選）",
-  "description": "描述（可選）",
-  "all_day": false
-}}
+請根據使用者的指令，只填需要更新的欄位，不變的欄位留 null。
 
 修改規則：
 1. 「改到明天/後天/週五」→ 保持原持續時間，只移動日期，時間不變
 2. 「改到下午 N 點 / N:00」→ 開始改為 N:00，結束 = 開始 + 原持續時間
 3. 「延後/提前 N 小時/分鐘」→ 開始和結束各平移相同時間
 4. 「改成 N 小時/分鐘」→ 結束 = 原開始 + N 小時/分鐘（開始不變）
-5. 若只改名稱/地點/描述，時間欄位省略
-6. 欄位為 null 時可省略。
+5. 若只改名稱/地點/描述，時間欄位留 null
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
 時區：{settings.timezone}
@@ -313,24 +286,20 @@ async def parse_update_details(
 原始行程：
 {event_info}"""
 
-    model = _get_model(system_prompt)
-
     try:
-        response = await model.generate_content_async(user_message)
+        response = await _get_client().aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=user_message,
+            config=_config(system_prompt, EventDetails),
+        )
     except Exception:
         logger.warning("parse_update_details API call failed", exc_info=True)
         return None
 
-    raw = response.text.strip()
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("parse_update_details 回傳非 JSON: %s", raw)
+    details = response.parsed
+    if not isinstance(details, EventDetails):
+        logger.warning(
+            "parse_update_details 未回傳合法 EventDetails: %s", (response.text or "")[:300]
+        )
         return None
-
-    try:
-        return EventDetails.model_validate(data)
-    except Exception:
-        logger.warning("parse_update_details EventDetails 驗證失敗: %s", data)
-        return None
+    return details

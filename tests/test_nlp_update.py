@@ -13,6 +13,7 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
+from app.models.intent import EventDetails
 from app.services import nlp
 
 _TZ = ZoneInfo("Asia/Taipei")
@@ -25,13 +26,20 @@ _SAMPLE_EVENT = {
 }
 
 
-def _make_mock_model(text: str):
-    """建立 Gemini GenerativeModel mock，generate_content_async 回傳 response.text"""
+def _mock_client(parsed=None, text: str = "", error: Exception | None = None):
+    """建立 google-genai Client mock。
+
+    新 SDK 由 response_schema 在協議層解析，所以 mock 的是 response.parsed
+    （型別化物件）而非 response.text 的 JSON 字串。
+    """
     mock_response = MagicMock()
+    mock_response.parsed = parsed
     mock_response.text = text
-    mock_model = MagicMock()
-    mock_model.generate_content_async = AsyncMock(return_value=mock_response)
-    return mock_model
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(
+        side_effect=error, return_value=mock_response
+    )
+    return client
 
 
 # ── 成功修改名稱 ──
@@ -40,7 +48,8 @@ def _make_mock_model(text: str):
 @pytest.mark.asyncio
 async def test_parse_update_details_summary_only():
     """只改名稱，回傳僅含 summary 的 EventDetails"""
-    with patch("app.services.nlp._get_model", return_value=_make_mock_model('{"summary": "月會"}')):
+    details = EventDetails(summary="月會")
+    with patch("app.services.nlp._get_client", return_value=_mock_client(parsed=details)):
         result = await nlp.parse_update_details("把週會改成月會", _SAMPLE_EVENT)
 
     assert result is not None
@@ -55,8 +64,11 @@ async def test_parse_update_details_summary_only():
 @pytest.mark.asyncio
 async def test_parse_update_details_move_to_tomorrow():
     """移到明天，start/end 都更新"""
-    response_json = '{"start_time": "2024-03-16T10:00:00+08:00", "end_time": "2024-03-16T11:00:00+08:00"}'
-    with patch("app.services.nlp._get_model", return_value=_make_mock_model(response_json)):
+    details = EventDetails(
+        start_time=datetime(2024, 3, 16, 10, 0, tzinfo=_TZ),
+        end_time=datetime(2024, 3, 16, 11, 0, tzinfo=_TZ),
+    )
+    with patch("app.services.nlp._get_client", return_value=_mock_client(parsed=details)):
         result = await nlp.parse_update_details("移到明天", _SAMPLE_EVENT)
 
     assert result is not None
@@ -70,33 +82,21 @@ async def test_parse_update_details_move_to_tomorrow():
 
 @pytest.mark.asyncio
 async def test_parse_update_details_api_error_returns_none():
-    mock_model = MagicMock()
-    mock_model.generate_content_async = AsyncMock(side_effect=Exception("API error"))
-
-    with patch("app.services.nlp._get_model", return_value=mock_model):
+    client = _mock_client(error=Exception("API error"))
+    with patch("app.services.nlp._get_client", return_value=client):
         result = await nlp.parse_update_details("改時間", _SAMPLE_EVENT)
 
     assert result is None
 
 
-# ── JSON 解析失敗時回傳 None ──
+# ── 拿不到合法 EventDetails 時回傳 None ──
 
 
 @pytest.mark.asyncio
-async def test_parse_update_details_invalid_json_returns_none():
-    with patch("app.services.nlp._get_model", return_value=_make_mock_model("這不是 JSON 格式的回應")):
-        result = await nlp.parse_update_details("改時間", _SAMPLE_EVENT)
-
-    assert result is None
-
-
-# ── 模型驗證失敗時回傳 None ──
-
-
-@pytest.mark.asyncio
-async def test_parse_update_details_validation_error_returns_none():
-    # start_time 格式錯誤，無法驗證
-    with patch("app.services.nlp._get_model", return_value=_make_mock_model('{"start_time": "not-a-datetime"}')):
+async def test_parse_update_details_unparsable_returns_none():
+    """被安全過濾擋下或回傳不符 schema 時，response.parsed 會是 None。"""
+    client = _mock_client(parsed=None, text="這不是合法回應")
+    with patch("app.services.nlp._get_client", return_value=client):
         result = await nlp.parse_update_details("改時間", _SAMPLE_EVENT)
 
     assert result is None

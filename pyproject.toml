@@ -13,7 +13,7 @@ dependencies = [
     "cryptography>=44,<45",
     "httpx>=0.28,<1",
     "google-cloud-secret-manager>=2.20,<3",
-    "google-generativeai>=0.8.6",
+    "google-genai>=2.25.0",
 ]
 
 [dependency-groups]

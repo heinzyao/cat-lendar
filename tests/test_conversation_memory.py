@@ -14,6 +14,7 @@ os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode(
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
 from app.config import settings
+from app.models.intent import CalendarIntentPayload
 from app.models.user import ConversationMessage
 
 
@@ -224,11 +225,33 @@ async def test_clear_conversation_history():
     mock_doc_ref.delete.assert_awaited_once()
 
 
+def _mock_client(parsed):
+    """google-genai Client mock：models.generate_content 路徑（無對話歷史）。"""
+    resp = MagicMock()
+    resp.parsed = parsed
+    resp.text = ""
+    client = MagicMock()
+    client.aio.models.generate_content = AsyncMock(return_value=resp)
+    return client
+
+
+def _mock_chat_client(parsed):
+    """google-genai Client mock：chats.create → send_message 路徑（有對話歷史）。"""
+    resp = MagicMock()
+    resp.parsed = parsed
+    resp.text = ""
+    chat = MagicMock()
+    chat.send_message = AsyncMock(return_value=resp)
+    client = MagicMock()
+    client.aio.chats.create = MagicMock(return_value=chat)
+    return client, chat
+
+
 # ── NLP: parse_intent with conversation_history ──
 
 
 async def test_parse_intent_passes_history_as_messages():
-    """parse_intent 應將 conversation_history 轉為 Gemini multi-turn history"""
+    """parse_intent 應將 conversation_history 轉為 google-genai 的 Content 形狀"""
     now = datetime.now(timezone.utc)
     history = [
         ConversationMessage(role="user", content="明天有什麼行程？", timestamp=now),
@@ -237,46 +260,41 @@ async def test_parse_intent_passes_history_as_messages():
         ),
     ]
 
-    mock_response = MagicMock()
-    mock_response.text = '{"action": "update", "search_keyword": "開會", "event_details": {"start_time": "2024-03-16T14:00:00+08:00"}, "confidence": 0.9}'
+    client, chat = _mock_chat_client(
+        CalendarIntentPayload(action="update", search_keyword="開會", confidence=0.9)
+    )
 
-    mock_chat = MagicMock()
-    mock_chat.send_message_async = AsyncMock(return_value=mock_response)
-
-    mock_model = MagicMock()
-    mock_model.start_chat = MagicMock(return_value=mock_chat)
-
-    with patch("app.services.nlp._get_model", return_value=mock_model):
+    with patch("app.services.nlp._get_client", return_value=client):
         from app.services.nlp import parse_intent
         intent = await parse_intent("把它改到下午兩點", history)
 
-    # 驗證 start_chat 接收到正確的 history（Gemini 格式：role="model" 非 "assistant"）
-    history_arg = mock_model.start_chat.call_args[1]["history"]
+    # 驗證 history 轉成 types.Content（Gemini 角色為 "model" 而非 "assistant"）
+    history_arg = client.aio.chats.create.call_args[1]["history"]
     assert len(history_arg) == 2
-    assert history_arg[0]["role"] == "user"
-    assert history_arg[0]["parts"] == "明天有什麼行程？"
-    assert history_arg[1]["role"] == "model"
-    assert history_arg[1]["parts"] == "明天有開會 10:00-11:00"
+    assert history_arg[0].role == "user"
+    assert history_arg[0].parts[0].text == "明天有什麼行程？"
+    assert history_arg[1].role == "model"
+    assert history_arg[1].parts[0].text == "明天有開會 10:00-11:00"
 
-    # 驗證新訊息透過 send_message_async 傳入
-    mock_chat.send_message_async.assert_awaited_once_with("把它改到下午兩點")
+    # 驗證新訊息透過 send_message 傳入，且原話有被保留下來
+    chat.send_message.assert_awaited_once_with("把它改到下午兩點")
+    assert intent.original_message == "把它改到下午兩點"
 
 
 async def test_parse_intent_without_history():
-    """不傳 history 時使用 generate_content_async（非 chat）"""
-    mock_response = MagicMock()
-    mock_response.text = '{"action": "query", "time_range": {"start": "2024-03-15T00:00:00+08:00", "end": "2024-03-15T23:59:59+08:00"}, "confidence": 0.9}'
+    """不傳 history 時直接用 models.generate_content（不開 chat）"""
+    client = _mock_client(
+        CalendarIntentPayload(action="query", confidence=0.9)
+    )
 
-    mock_model = MagicMock()
-    mock_model.generate_content_async = AsyncMock(return_value=mock_response)
-
-    with patch("app.services.nlp._get_model", return_value=mock_model):
+    with patch("app.services.nlp._get_client", return_value=client):
         from app.services.nlp import parse_intent
         intent = await parse_intent("今天有什麼行程？")
 
-    # 無 history 應直接呼叫 generate_content_async
-    mock_model.generate_content_async.assert_awaited_once_with("今天有什麼行程？")
-    mock_model.start_chat.assert_not_called()
+    client.aio.models.generate_content.assert_awaited_once()
+    assert client.aio.models.generate_content.call_args[1]["contents"] == "今天有什麼行程？"
+    client.aio.chats.create.assert_not_called()
+    assert intent.action == "query"
 
 
 async def test_parse_intent_system_prompt_includes_history_note():
@@ -286,24 +304,15 @@ async def test_parse_intent_system_prompt_includes_history_note():
         ConversationMessage(role="user", content="test", timestamp=now),
     ]
 
-    mock_response = MagicMock()
-    mock_response.text = '{"action": "unknown", "confidence": 0.5}'
-    mock_chat = MagicMock()
-    mock_chat.send_message_async = AsyncMock(return_value=mock_response)
-    mock_model = MagicMock()
-    mock_model.start_chat = MagicMock(return_value=mock_chat)
+    client, _ = _mock_chat_client(
+        CalendarIntentPayload(action="unknown", confidence=0.5)
+    )
 
-    captured = []
-
-    def capture_model(system_prompt):
-        captured.append(system_prompt)
-        return mock_model
-
-    with patch("app.services.nlp._get_model", side_effect=capture_model):
+    with patch("app.services.nlp._get_client", return_value=client):
         from app.services.nlp import parse_intent
         await parse_intent("改到明天", history)
 
-    system_prompt = captured[0]
+    system_prompt = client.aio.chats.create.call_args[1]["config"].system_instruction
     assert (
         "對話歷史" in system_prompt
         or "對話上下文" in system_prompt

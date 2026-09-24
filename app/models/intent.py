@@ -1,16 +1,16 @@
-"""意圖模型模組：定義 Claude NLP 解析結果的資料結構。
+"""意圖模型模組：定義 NLP 解析結果的資料結構。
 
 設計理由
 --------
 使用 Pydantic BaseModel 作為資料容器，原因：
-1. 自動驗證 Claude 回傳的 JSON，欄位型別不符時拋出清楚的錯誤
+1. 同時作為 Gemini 的 response_schema，欄位與型別由 API 在協議層保證
 2. model_validate() 支援從 dict 直接建構，與 json.loads() 搭配無縫
-3. 所有欄位預設為 None，容忍 Claude 省略非必要欄位
+3. 所有欄位預設為 None，容忍模型省略非必要欄位
 4. model_dump(mode="json") 可將 datetime 序列化為字串，存入 Firestore 時使用
 
 意圖流程
 --------
-使用者訊息 → Claude API → JSON 字串 → json.loads() → CalendarIntent.model_validate()
+使用者訊息 → Gemini（response_schema）→ response.parsed → CalendarIntent
 → handlers/message.py 依 action 分派至對應處理函式
 """
 
@@ -27,7 +27,7 @@ class ActionType(str, Enum):
 
     繼承 str 的設計理由：
     - 讓 Enum 值可直接當 str 使用（如字串比對、JSON 序列化），無需額外轉換
-    - Claude 輸出 "create"、"query" 等小寫字串，與 Enum 值直接對應
+    - 模型輸出 "create"、"query" 等小寫字串，與 Enum 值直接對應
     """
     CREATE = "create"          # 新增行程
     QUERY = "query"            # 查詢行程
@@ -42,7 +42,7 @@ class EventDetails(BaseModel):
 
     所有欄位皆為選填，原因：
     - 修改操作只需填寫要更新的欄位，未填的欄位保持原值
-    - Claude 會根據使用者訊息推斷，不確定的欄位直接省略（回傳 null）
+    - 模型會根據使用者訊息推斷，不確定的欄位回傳 null
     """
     summary: str | None = None           # 行程名稱（標題）
     start_time: datetime | None = None   # 開始時間（ISO8601，含時區）
@@ -59,14 +59,33 @@ class TimeRange(BaseModel):
     設計理由：
     - 從 EventDetails 獨立出來，語意更清晰（這是搜尋條件，不是行程本身的時間）
     - 查詢「今天的行程」→ start=今天 00:00, end=今天 23:59
-    - update/delete 若未指定時間範圍，Claude 預設搜尋前後各一週
+    - update/delete 若未指定時間範圍，預設搜尋前後各一週
     """
     start: datetime  # 查詢起始時間（含）
     end: datetime    # 查詢結束時間（含）
 
 
-class CalendarIntent(BaseModel):
-    """Claude NLP 解析的完整意圖物件，作為 handlers/message.py 的決策輸入。
+class CalendarIntentPayload(BaseModel):
+    """Gemini 實際回傳的欄位——即 `response_schema` 的形狀。
+
+    與 CalendarIntent 分開的理由：`original_message` 是我們解析後自己補上的，
+    不是模型輸出的欄位。若把 CalendarIntent 整個當 response_schema，等於要求
+    Gemini 把使用者原話再抄一遍，浪費 token 也讓 schema 說謊。
+    """
+    action: ActionType                      # 操作類型，決定後續分派邏輯
+    event_details: EventDetails | None = None  # 行程細節（create/update 用）
+    time_range: TimeRange | None = None        # 搜尋時間範圍（query/update/delete 用）
+    search_keyword: str | None = Field(
+        default=None, description="用於查詢/修改/刪除時的關鍵字"
+    )                                          # 關鍵字搜尋（補充 time_range 或單獨使用）
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)  # 解析信心分數（0~1）
+    clarification_needed: str | None = Field(
+        default=None, description="對使用者的補充說明（推定內容、建議確認事項等）"
+    )                                          # 推定說明或需確認事項，顯示在回覆訊息末尾
+
+
+class CalendarIntent(CalendarIntentPayload):
+    """NLP 解析的完整意圖物件，作為 handlers/message.py 的決策輸入。
 
     欄位選填策略：
     - create：需要 event_details（含 summary + start_time）
@@ -77,16 +96,6 @@ class CalendarIntent(BaseModel):
     confidence 的使用方式：
     - >= 0.5：直接執行操作
     - < 0.5：向使用者要求澄清，不執行操作（避免誤操作）
-    - Claude 在推定不明確資訊後會設 0.7+，並在 clarification_needed 說明推定內容
+    - 模型在推定不明確資訊後會設 0.7+，並在 clarification_needed 說明推定內容
     """
-    action: ActionType                      # 操作類型，決定後續分派邏輯
-    event_details: EventDetails | None = None  # 行程細節（create/update 用）
-    time_range: TimeRange | None = None        # 搜尋時間範圍（query/update/delete 用）
-    search_keyword: str | None = Field(
-        default=None, description="用於查詢/修改/刪除時的關鍵字"
-    )                                          # 關鍵字搜尋（補充 time_range 或單獨使用）
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)  # Claude 解析信心分數（0~1）
-    clarification_needed: str | None = Field(
-        default=None, description="對使用者的補充說明（推定內容、建議確認事項等）"
-    )                                          # 推定說明或需確認事項，顯示在回覆訊息末尾
     original_message: str | None = None        # 保留原始訊息，供 update 二次精細解析用
