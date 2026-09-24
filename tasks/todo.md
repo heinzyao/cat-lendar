@@ -74,4 +74,34 @@ Google Calendar 查詢也成功，只差把結果送回 LINE。
    webhook 嚴格，日後寫探測腳本要記得。
 2. **`Calendar operation failed` 這個 log 標籤會誤導。** 實際失敗的是
    `line_messaging.reply_text`，日曆操作本身成功。將來真的日曆故障時
-   無法從訊息區分兩者，值得改掉（不在本次範圍）。
+   無法從訊息區分兩者。→ **已於 `08acf71` 修掉**，見下。
+
+## 後續：回覆失敗不再偽裝成日曆錯誤（`08acf71`，revision 00049-q2m）
+
+上面第 2 點追查後發現不只是標籤問題。`_execute_intent` 的 `except Exception`
+同時蓋住「日曆操作失敗」與「各 `_handle_*` 內部 reply 失敗」，後者發生時除了
+記錯標籤，還會用同一個已失效的 replyToken **再 reply 一次**——那次註定失敗，
+而且會把原始錯因蓋掉。
+
+改成先攔 `ApiException`（只記 `LINE reply failed`、不重試），其餘維持原行為。
+
+### Production 驗證（送兩則查詢，各觸發一次回覆失敗）
+
+| 指標 | 修正前（00048-r89） | 修正後（00049-q2m） |
+|---|---|---|
+| `LINE reply failed` | 0 | 2 |
+| `Calendar operation failed` | 2（誤導） | 0 |
+| `Invalid reply token` | 4 | 2 |
+
+`Invalid reply token` 從 4 次降到 2 次是關鍵證據：每則訊息原本會嘗試回覆兩次
+（正常回覆 + except 裡的錯誤回覆），現在只剩一次，代表那個註定失敗的重試
+真的不再發生。traceback 也停在 `_handle_query` 的 reply 那行，不再被二次失敗蓋掉。
+
+兩個單元測試各釘一邊（`ApiException` 不得重試 / 其他例外仍須通知使用者），
+並確認過拿掉 `ApiException` 分支後會 FAILED，不是恆真斷言。
+
+## 仍未完成
+
+**從真實 LINE 帳號發訊息驗一次。** 簽章模擬 webhook 的 replyToken 是假的，
+看不到回覆內容，所以解析出的具體欄位值始終沒驗到。新 SDK 第一次上線，
+建議發一則查詢類與一則建立類指令確認回覆真的正確。
