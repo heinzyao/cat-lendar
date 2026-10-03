@@ -337,6 +337,9 @@ async def update_reminders_time_by_event_id(event_id: str, new_start: datetime) 
     count = 0
     for doc in docs:
         data = doc.to_dict()
+        # 任何欄位異動（描述、顏色…）都會進 sync，時間沒變就不能重設 sent，否則已推過的提醒會重推
+        if data.get("start_time") == new_start:
+            continue
         minutes = data.get("reminder_minutes", 0)
         new_reminder_at = new_start - timedelta(minutes=minutes)
         await doc.reference.update({

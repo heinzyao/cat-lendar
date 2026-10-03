@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.store import firestore as store
 from app.services import line_messaging
@@ -26,10 +26,15 @@ async def check_and_send_reminders() -> int:
     """查詢所有到期提醒並發送 LINE push，回傳發送數量"""
     due = await store.get_due_reminders()
     sent_count = 0
+    now = datetime.now(timezone.utc)
 
     for reminder in due:
         reminder_id = reminder["id"]
         try:
+            # 事件已開始的提醒沒有意義，靜默標記掉（防 sync 重設或排程中斷後補推一大串）
+            if reminder["start_time"] <= now:
+                await store.mark_reminder_sent(reminder_id)
+                continue
             msg = format_reminder_message(
                 event_summary=reminder["event_summary"],
                 start_time=reminder["start_time"],

@@ -2,7 +2,7 @@
 import os
 import base64
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -141,6 +141,79 @@ async def test_check_and_send_reminders_multiple():
     assert sent == 3
     assert mock_line.push_text.await_count == 3
     assert mock_store.mark_reminder_sent.await_count == 3
+
+
+async def test_check_and_send_reminders_skips_started_event():
+    """事件已開始的提醒不推播，只標記 sent（避免 sync 重設後大量補推過期提醒）"""
+    now = datetime.now(timezone.utc)
+    reminder = {
+        "id": "stale",
+        "line_user_id": _USER,
+        "event_summary": "昨天的會",
+        "start_time": now - timedelta(days=1),
+        "reminder_at": now - timedelta(days=1, minutes=15),
+        "reminder_minutes": 15,
+        "sent": False,
+    }
+
+    with (
+        patch("app.services.notification.store") as mock_store,
+        patch("app.services.notification.line_messaging") as mock_line,
+    ):
+        mock_store.get_due_reminders = AsyncMock(return_value=[reminder])
+        mock_store.mark_reminder_sent = AsyncMock()
+        mock_line.push_text = AsyncMock()
+
+        sent = await check_and_send_reminders()
+
+    assert sent == 0
+    mock_line.push_text.assert_not_awaited()
+    mock_store.mark_reminder_sent.assert_awaited_once_with("stale")
+
+
+# ── update_reminders_time_by_event_id ──
+
+
+def _fake_reminder_doc(data: dict):
+    doc = MagicMock()
+    doc.to_dict.return_value = data
+    doc.reference.update = AsyncMock()
+    return doc
+
+
+async def test_sync_update_keeps_sent_when_start_unchanged():
+    from app.store import firestore as store
+
+    start = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    doc = _fake_reminder_doc({"start_time": start, "reminder_minutes": 15, "sent": True})
+    db = MagicMock()
+    db.collection.return_value.where.return_value.get = AsyncMock(return_value=[doc])
+
+    with patch.object(store, "get_db", return_value=db):
+        updated = await store.update_reminders_time_by_event_id("ev1", start)
+
+    assert updated == 0
+    doc.reference.update.assert_not_awaited()
+
+
+async def test_sync_update_resets_sent_when_start_changed():
+    from app.store import firestore as store
+
+    old = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    new = old + timedelta(hours=2)
+    doc = _fake_reminder_doc({"start_time": old, "reminder_minutes": 15, "sent": True})
+    db = MagicMock()
+    db.collection.return_value.where.return_value.get = AsyncMock(return_value=[doc])
+
+    with patch.object(store, "get_db", return_value=db):
+        updated = await store.update_reminders_time_by_event_id("ev1", new)
+
+    assert updated == 1
+    doc.reference.update.assert_awaited_once_with({
+        "start_time": new,
+        "reminder_at": new - timedelta(minutes=15),
+        "sent": False,
+    })
 
 
 # ── /internal/notify endpoint ──
