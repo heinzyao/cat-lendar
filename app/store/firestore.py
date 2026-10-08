@@ -280,29 +280,6 @@ async def set_notify_enabled(line_user_id: str, enabled: bool) -> None:
     )
 
 
-# ── OAuth States (CSRF 防護用一次性 state) ──
-
-
-async def save_oauth_state(state: str) -> None:
-    """儲存 OAuth state token，10 分鐘後過期。"""
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-    await get_db().collection("oauth_states").document(state).set({"expires_at": expires_at})
-
-
-async def verify_and_consume_oauth_state(state: str) -> bool:
-    """驗證並消費 OAuth state（一次性使用）。回傳 True 表示有效。"""
-    ref = get_db().collection("oauth_states").document(state)
-    doc = await ref.get()
-    if not doc.exists:
-        return False
-    await ref.delete()
-    data = doc.to_dict()
-    expires_at = data["expires_at"]
-    if expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-        return False
-    return True
-
-
 # ── Calendar Sync Token ──
 
 

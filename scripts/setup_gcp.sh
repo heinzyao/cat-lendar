@@ -81,10 +81,10 @@ else
   success "Firestore 資料庫建立完成"
 fi
 
-# 設定 TTL policy（oauth_states.expires_at 與 user_states.expires_at）
+# 設定 TTL policy（user_states.expires_at）
 step "設定 Firestore TTL Policy"
 
-for COLLECTION in oauth_states user_states; do
+for COLLECTION in user_states; do
   info "設定 $COLLECTION.expires_at TTL..."
   gcloud firestore fields ttls update expires_at \
     --collection-group="$COLLECTION" \
