@@ -83,7 +83,7 @@ class CalendarIntentPayload(BaseModel):
     )                                          # 關鍵字搜尋（補充 time_range 或單獨使用）
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)  # 解析信心分數（0~1）
     clarification_needed: str | None = Field(
-        default=None, description="對使用者的補充說明（推定內容、建議確認事項等）"
+        default=None, description="對使用者的補充說明，一句話、40 字內（推定內容、建議確認事項等）"
     )                                          # 推定說明或需確認事項，顯示在回覆訊息末尾
 
 

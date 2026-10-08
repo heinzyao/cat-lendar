@@ -12,7 +12,7 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
-from app.handlers.message import _handle_create
+from app.handlers.message import _NOTE_MAX_LEN, _handle_create, _with_assumption_note
 from app.models.intent import ActionType, CalendarIntent, EventDetails
 
 
@@ -60,3 +60,9 @@ async def test_create_multiple_events_partial_failure():
     assert "看牙醫" in msg and "聚餐" in msg and "❌『壞掉』" in msg
     line.reply_text.assert_awaited_once_with("tok", msg)
     assert [c.args[2] for c in notify.notify_others.await_args_list] == ["看牙醫", "聚餐"]
+
+
+def test_assumption_note_truncates_runaway_output():
+    intent = CalendarIntent(action=ActionType.CREATE, clarification_needed="推定為明天～！" * 50)
+    note = _with_assumption_note("ok", intent).split("💡 ")[1]
+    assert len(note) == _NOTE_MAX_LEN + 1 and note.endswith("…")

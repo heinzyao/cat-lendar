@@ -60,6 +60,9 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+_NOTE_MAX_LEN = 80
+
+
 def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
     """在回覆訊息末尾附加模型的推定說明（若有）。
 
@@ -69,8 +72,12 @@ def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
     - 附加在訊息末尾而非另外詢問，降低使用者操作負擔，同時保持透明度
     - 使用 💡 圖示視覺區隔推定說明與主要回覆
     """
-    if intent.clarification_needed:
-        return msg + f"\n\n💡 {intent.clarification_needed}"
+    note = intent.clarification_needed
+    if note:
+        # 模型偶爾會陷入重複輸出，硬性截斷避免洗版
+        if len(note) > _NOTE_MAX_LEN:
+            note = note[:_NOTE_MAX_LEN] + "…"
+        return msg + f"\n\n💡 {note}"
     return msg
 
 # ── Main entry point ──

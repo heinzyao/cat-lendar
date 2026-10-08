@@ -147,7 +147,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
    - 只提時段 → 上午 09:00、下午 14:00、晚上 19:00
    - update/delete 無時間範圍 → 搜尋前後各一週
    - 對話上下文可推斷時直接引用
-   推定後在 clarification_needed 簡述推定內容，confidence 設 0.7 以上。
+   推定後在 clarification_needed 用一句話（40 字內）說明推定內容，例如「未指定日期，今日 16:00 已過，推定為明天 10/9 16:00-17:00」；不要重複、不加語助詞或驚嘆號。confidence 設 0.7 以上。
    僅在完全無法判斷意圖時才設 confidence < 0.5。
 7. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}
 
