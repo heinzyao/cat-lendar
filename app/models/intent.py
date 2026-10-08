@@ -74,6 +74,9 @@ class CalendarIntentPayload(BaseModel):
     """
     action: ActionType                      # 操作類型，決定後續分派邏輯
     event_details: EventDetails | None = None  # 行程細節（create/update 用）
+    events: list[EventDetails] | None = Field(
+        default=None, description="create 一次新增多個行程時，每個行程一筆"
+    )                                          # 多筆新增；有值時優先於 event_details
     time_range: TimeRange | None = None        # 搜尋時間範圍（query/update/delete 用）
     search_keyword: str | None = Field(
         default=None, description="用於查詢/修改/刪除時的關鍵字"
@@ -88,7 +91,7 @@ class CalendarIntent(CalendarIntentPayload):
     """NLP 解析的完整意圖物件，作為 handlers/message.py 的決策輸入。
 
     欄位選填策略：
-    - create：需要 event_details（含 summary + start_time）
+    - create：需要 event_details（含 summary + start_time）；多筆時改放 events
     - query：需要 time_range
     - update/delete：需要 time_range 或 search_keyword，event_details 放更新值
     - set_reminder：需要 time_range 或 search_keyword，event_details.reminder_minutes 必填

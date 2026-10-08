@@ -137,6 +137,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
 
 規則：
 1. create: event_details 必填 summary 和 start_time。若未指定 end_time，預設 1 小時後。若有提及提前提醒，設定 reminder_minutes。
+   若一則訊息要新增多個行程，每個行程各放一筆到 events（各自填 summary、start_time），event_details 留 null。
 2. query: time_range 必填。「今天」=今天 00:00~23:59，「這週」=本週一~週日，「明天」=明天整天。
 3. update: search_keyword 或 time_range 用來找到要修改的行程，event_details 放新的值。
 4. delete: search_keyword 或 time_range 用來找到要刪除的行程。

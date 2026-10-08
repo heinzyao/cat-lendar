@@ -222,33 +222,50 @@ async def _handle_create(
     1. 模型從訊息中提取的提醒設定（details.reminder_minutes）
     2. 使用者的預設提醒設定（Firestore user_prefs.default_reminder_minutes）
     3. 無提醒（Google Calendar 使用日曆預設值）
+    多筆新增（intent.events）：逐筆建立，單筆失敗只標記該筆，不中斷其餘。
+    設計理由：前面幾筆已寫進日曆，若整批回 CALENDAR_ERROR，使用者會以為全沒建、
+    重送一次就重複建立。
     """
-    details = intent.event_details
+    details_list = intent.events or [intent.event_details]
+    default_reminder = await store.get_default_reminder_minutes(user_id)
 
-    # 提醒設定：優先使用模型從訊息提取的值，若無則使用使用者預設設定
-    reminder_minutes = details.reminder_minutes
-    if reminder_minutes is None:
-        reminder_minutes = await store.get_default_reminder_minutes(user_id)
+    blocks = []
+    created = []  # (summary, time_str)，回覆後才推播，避免拖慢 reply
+    for details in details_list:
+        # 提醒設定：優先使用模型從訊息提取的值，若無則使用使用者預設設定
+        reminder_minutes = details.reminder_minutes
+        if reminder_minutes is None:
+            reminder_minutes = default_reminder
 
-    event = await calendar.create_event(credentials, details, line_user_id=user_id, reminder_minutes=reminder_minutes)
+        try:
+            event = await calendar.create_event(credentials, details, line_user_id=user_id, reminder_minutes=reminder_minutes)
+        except Exception:
+            if len(details_list) == 1:
+                raise
+            logger.exception("Create event failed: %s", details.summary)
+            blocks.append(i18n.EVENT_CREATE_FAILED.format(summary=details.summary or "(無標題)"))
+            continue
 
-    time_str = _get_event_time_str(event)
-    # 有地點時顯示更豐富的確認訊息
-    if details.location:
-        msg = i18n.EVENT_CREATED_WITH_LOCATION.format(
-            summary=event.get("summary", ""), time=time_str, location=details.location
-        )
-    else:
-        msg = i18n.EVENT_CREATED.format(summary=event.get("summary", ""), time=time_str)
+        time_str = _get_event_time_str(event)
+        # 有地點時顯示更豐富的確認訊息
+        if details.location:
+            msg = i18n.EVENT_CREATED_WITH_LOCATION.format(
+                summary=event.get("summary", ""), time=time_str, location=details.location
+            )
+        else:
+            msg = i18n.EVENT_CREATED.format(summary=event.get("summary", ""), time=time_str)
 
-    if reminder_minutes is not None:
-        msg += "\n" + i18n.REMINDER_SET.format(minutes=reminder_minutes)
+        if reminder_minutes is not None:
+            msg += "\n" + i18n.REMINDER_SET.format(minutes=reminder_minutes)
+        blocks.append(msg)
+        created.append((event.get("summary", ""), time_str))
 
-    reply_msg = _with_assumption_note(msg, intent)
+    reply_msg = _with_assumption_note("\n\n".join(blocks), intent)
     await line_messaging.reply_text(reply_token, reply_msg)
 
     # 通知其他已登記的用戶（共用日曆場景）
-    await calendar_notify.notify_others("create", user_id, event.get("summary", ""), time_str)
+    for summary, time_str in created:
+        await calendar_notify.notify_others("create", user_id, summary, time_str)
 
     return reply_msg
 

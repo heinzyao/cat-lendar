@@ -2,6 +2,7 @@
 
 # Calendar operations
 EVENT_CREATED = "幫你記到日曆上囉！📝\n📌 {summary}\n🕐 {time}"
+EVENT_CREATE_FAILED = "❌『{summary}』沒記成功，請再傳一次這個行程。"
 EVENT_CREATED_WITH_LOCATION = "幫你記到日曆上囉！📝\n📌 {summary}\n🕐 {time}\n📍 {location}"
 EVENT_DELETED = "沒問題，已經把『{summary}』從日曆刪除囉！🗑️"
 EVENT_UPDATED = "好喔，幫你把行程更新成這樣：\n📌 {summary}\n🕐 {time}"
@@ -45,7 +46,8 @@ HELP_MESSAGE = (
     "你可以像跟朋友聊天一樣告訴我：\n\n"
     "➕ 記下行程\n"
     "・『幫我記明天下午 2 點開會』\n"
-    "・『下週一整天我要請假』\n\n"
+    "・『下週一整天我要請假』\n"
+    "・『週三 10 點看牙醫，週五晚上 7 點聚餐』（一次記好幾個）\n\n"
     "🔍 偷看日曆\n"
     "・『今天有什麼行程？』\n"
     "・『明天要開會嗎？』\n\n"

@@ -1,0 +1,62 @@
+"""_handle_create 多筆新增測試（mock store / calendar / line）"""
+import os
+import base64
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+os.environ.setdefault("LINE_CHANNEL_SECRET", "test_secret_32bytes_padding_here!")
+os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
+os.environ.setdefault("GEMINI_API_KEY", "test-key")
+os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+os.environ.setdefault("GCP_PROJECT_ID", "test-project")
+
+from app.handlers.message import _handle_create
+from app.models.intent import ActionType, CalendarIntent, EventDetails
+
+
+def _event(summary: str) -> dict:
+    return {
+        "id": summary,
+        "summary": summary,
+        "start": {"dateTime": "2024-03-15T10:00:00+08:00"},
+        "end": {"dateTime": "2024-03-15T11:00:00+08:00"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_multiple_events_partial_failure():
+    start = datetime(2024, 3, 15, 10, 0, tzinfo=timezone.utc)
+    intent = CalendarIntent(
+        action=ActionType.CREATE,
+        events=[
+            EventDetails(summary="看牙醫", start_time=start),
+            EventDetails(summary="壞掉", start_time=start),
+            EventDetails(summary="聚餐", start_time=start),
+        ],
+        confidence=0.9,
+    )
+
+    async def fake_create(creds, details, **kw):
+        if details.summary == "壞掉":
+            raise RuntimeError("boom")
+        return _event(details.summary)
+
+    with (
+        patch("app.handlers.message.store") as store,
+        patch("app.handlers.message.calendar") as cal,
+        patch("app.handlers.message.line_messaging") as line,
+        patch("app.handlers.message.calendar_notify") as notify,
+    ):
+        store.get_default_reminder_minutes = AsyncMock(return_value=None)
+        cal.create_event = AsyncMock(side_effect=fake_create)
+        line.reply_text = AsyncMock()
+        notify.notify_others = AsyncMock()
+
+        msg = await _handle_create("tok", intent, MagicMock(), "U1")
+
+    assert cal.create_event.await_count == 3
+    assert "看牙醫" in msg and "聚餐" in msg and "❌『壞掉』" in msg
+    line.reply_text.assert_awaited_once_with("tok", msg)
+    assert [c.args[2] for c in notify.notify_others.await_args_list] == ["看牙醫", "聚餐"]
