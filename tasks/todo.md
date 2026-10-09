@@ -49,7 +49,7 @@
 
 **其餘模組的過期指涉已一併清除。** `app/handlers/message.py` 等 7 個檔案共 21 處
 註解寫「Claude」，是 2026-05-19 Claude→Gemini 遷移留下的，已在後續 commit 清掉。
-`AGENT.md` 的「Claude Code」指的是編碼工具而非 NLP 模型，刻意保留。
+`AGENT.md`（現為 `AGENTS.md`）的「Claude Code」指的是編碼工具而非 NLP 模型，刻意保留。
 
 ## Production 驗證結果（revision 00048-r89）
 
