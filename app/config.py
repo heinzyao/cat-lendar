@@ -10,8 +10,6 @@
 --------------
 - google_service_account_json：Service Account 金鑰 JSON（完整 JSON 字串）
   （Shared Calendar 架構：所有 LINE 用戶共用同一 Service Account 的日曆存取權）
-- encryption_key：Fernet 對稱加密金鑰，base64 編碼的 32 bytes
-  用於加密存入 Firestore 的敏感資料
 - notify_secret：Cloud Scheduler 呼叫 /notify 端點時的身份驗證 token
   防止任意人觸發提醒推播
 - user_state_ttl_seconds（300 秒）：選擇行程的等待逾時
@@ -43,9 +41,6 @@ class Settings(BaseSettings):
     google_service_account_json: str = ""   # Service Account JSON 金鑰（完整 JSON 字串）
     google_calendar_id: str = ""
 
-    # 加密（Fernet 對稱加密）
-    encryption_key: str = ""
-
     # GCP 設定
     gcp_project_id: str = ""  # Firestore 所在的 GCP 專案 ID（空字串時使用 ADC 預設）
 
@@ -72,7 +67,6 @@ class Settings(BaseSettings):
                 ("LINE_CHANNEL_ACCESS_TOKEN", self.line_channel_access_token),
                 ("GEMINI_API_KEY", self.gemini_api_key),
                 ("GOOGLE_CALENDAR_ID", self.google_calendar_id),
-                ("ENCRYPTION_KEY", self.encryption_key),
             )
             if not value
         ]

@@ -1,5 +1,3 @@
-import base64
-import os
 from pathlib import Path
 
 import pytest
@@ -19,6 +17,5 @@ def test_settings_requires_google_calendar_id(
             line_channel_secret="test_secret",
             line_channel_access_token="test_token",
             gemini_api_key="test-key",
-            encryption_key=base64.b64encode(os.urandom(32)).decode(),
             gcp_project_id="test-project",
         )

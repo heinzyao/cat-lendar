@@ -127,17 +127,12 @@ success "IAM 設定完成"
 # ── Secret Manager ──────────────────────────────────────────────────────────
 step "建立 Secret Manager 密鑰"
 
-# 產生 AES-256 加密金鑰
-GENERATED_KEY=$(python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())")
-info "已產生 ENCRYPTION_KEY（請妥善保存）: ${BOLD}$GENERATED_KEY${RESET}"
-
 # 密鑰名稱清單（對應 .env.example）
 declare -A SECRETS=(
   ["CATLENDAR_LINE_CHANNEL_SECRET"]=""
   ["CATLENDAR_LINE_CHANNEL_ACCESS_TOKEN"]=""
   ["GEMINI_API_KEY"]=""
   ["NOTIFY_SECRET"]=""
-  ["ENCRYPTION_KEY"]="$GENERATED_KEY"
 )
 
 for SECRET_NAME in "${!SECRETS[@]}"; do

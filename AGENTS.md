@@ -64,7 +64,7 @@ system/calendar_sync                 同步狀態
 
 本地從 `.env` 讀；production 由 `deploy.sh` 從 Secret Manager 掛載（LINE 兩個 secret 在 Secret Manager 名為 `CATLENDAR_LINE_*`）。
 
-`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、`GEMINI_API_KEY`、`GOOGLE_SERVICE_ACCOUNT_JSON`、`ENCRYPTION_KEY`、`NOTIFY_SECRET`、`GOOGLE_CALENDAR_ID`、`GCP_PROJECT_ID`
+`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、`GEMINI_API_KEY`、`GOOGLE_SERVICE_ACCOUNT_JSON`、`NOTIFY_SECRET`、`GOOGLE_CALENDAR_ID`、`GCP_PROJECT_ID`
 
 - Gemini 配額綁 GCP 專案而非 key，且與 diffords-cocktails 共用。
 - 新環境要先 `gcloud services enable generativelanguage.googleapis.com`。

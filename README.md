@@ -94,16 +94,9 @@ Please refer to [DEPLOYMENT.md](DEPLOYMENT.md) for detailed steps.
 | `GEMINI_API_KEY` | Gemini API Key |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON key (Run `scripts/setup_service_account.sh` for one-time setup) |
 | `GOOGLE_CALENDAR_ID` | Shared Calendar ID granted to the service account |
-| `ENCRYPTION_KEY` | AES-256-GCM encryption key (base64, 32 bytes) |
 | `GCP_PROJECT_ID` | GCP Project ID |
 | `NOTIFY_SECRET` | `X-Internal-Secret` header for `/internal/*` endpoints (called by Cloud Scheduler) |
 | `TIMEZONE` | Timezone (Default: `Asia/Taipei`) |
-
-Generate ENCRYPTION_KEY:
-
-```bash
-python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
-```
 
 Set up the Service Account (one-time setup):
 
@@ -135,7 +128,6 @@ cat-lendar/
 │   │   └── user.py             # UserState, ConversationMessage
 │   ├── store/
 │   │   ├── firestore.py        # Firestore CRUD operations
-│   │   └── encryption.py       # AES-256-GCM encryption/decryption
 │   ├── handlers/
 │   │   └── message.py          # Message handling coordinator
 │   └── utils/
@@ -148,7 +140,6 @@ cat-lendar/
 │   ├── deploy.sh               # Build + Push + Deploy to Cloud Run
 │   ├── dev.sh                  # Local Dev (uvicorn + ngrok)
 │   ├── update_secret.sh        # Update Secret Manager keys
-│   └── sync_push.py            # One-off: push weekly calendar summary to LINE
 ├── tests/                      # 71 tests, asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
@@ -203,7 +194,6 @@ Total of 71 tests covering:
 
 | Test File | Coverage |
 |-----------|----------|
-| `test_encryption.py` | AES-256-GCM encryption/decryption |
 | `test_datetime_utils.py` | Timezone formatting and conversion |
 | `test_models.py` | CalendarIntent validation, ActionType |
 | `test_api.py` | /health, webhook signature validation |
@@ -311,16 +301,9 @@ bash scripts/deploy.sh
 | `GEMINI_API_KEY` | Gemini API 金鑰 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 金鑰（執行 `scripts/setup_service_account.sh` 一次性設定） |
 | `GOOGLE_CALENDAR_ID` | 已分享給 service account 的共享行事曆 ID |
-| `ENCRYPTION_KEY` | AES-256-GCM 加密金鑰（base64，32 bytes） |
 | `GCP_PROJECT_ID` | GCP 專案 ID |
 | `NOTIFY_SECRET` | `/internal/*` 端點的 `X-Internal-Secret` 驗證標頭（由 Cloud Scheduler 呼叫） |
 | `TIMEZONE` | 時區（預設 `Asia/Taipei`） |
-
-產生 ENCRYPTION_KEY：
-
-```bash
-python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
-```
 
 設定 Service Account（一次性）：
 
@@ -352,7 +335,6 @@ cat-lendar/
 │   │   └── user.py             # UserState, ConversationMessage
 │   ├── store/
 │   │   ├── firestore.py        # Firestore CRUD
-│   │   └── encryption.py       # AES-256-GCM 加解密
 │   ├── handlers/
 │   │   └── message.py          # 訊息處理協調器
 │   └── utils/
@@ -365,7 +347,6 @@ cat-lendar/
 │   ├── deploy.sh               # 建置 + 推送 + 部署到 Cloud Run
 │   ├── dev.sh                  # 本地開發（uvicorn + ngrok）
 │   ├── update_secret.sh        # 更新 Secret Manager 密鑰
-│   └── sync_push.py            # 一次性腳本：推播本週行事曆摘要到 LINE
 ├── tests/                      # 71 個測試，asyncio_mode=auto
 ├── Dockerfile
 ├── pyproject.toml
@@ -419,7 +400,6 @@ uv run python -m pytest tests/ -q
 
 | 測試檔案 | 涵蓋範圍 |
 |---------|---------|
-| `test_encryption.py` | AES-256-GCM 加解密 |
 | `test_datetime_utils.py` | 時區轉換、時間格式化 |
 | `test_models.py` | CalendarIntent 驗證、ActionType |
 | `test_api.py` | /health、webhook 簽名驗證 |

@@ -1,6 +1,5 @@
 """nlp.parse_update_details 單元測試（mock Gemini API）"""
 import os
-import base64
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -10,7 +9,6 @@ import pytest
 os.environ.setdefault("LINE_CHANNEL_SECRET", "test_secret_32bytes_padding_here!")
 os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
-os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
 from app.models.intent import EventDetails

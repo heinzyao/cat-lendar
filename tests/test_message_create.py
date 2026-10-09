@@ -1,6 +1,5 @@
 """_handle_create 多筆新增測試（mock store / calendar / line）"""
 import os
-import base64
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,7 +8,6 @@ import pytest
 os.environ.setdefault("LINE_CHANNEL_SECRET", "test_secret_32bytes_padding_here!")
 os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
-os.environ.setdefault("ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
 from app.handlers.message import _NOTE_MAX_LEN, _handle_create, _with_assumption_note
