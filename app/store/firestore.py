@@ -1,34 +1,12 @@
-"""Firestore 資料庫操作層：使用者狀態、對話記憶、行程提醒的持久化儲存。
+"""Firestore 存取層：用戶登記、選擇狀態、對話記憶、提醒、偏好、同步 token。
 
-設計理由——為何選 Firestore？
-- Cloud Run 是無狀態（stateless）容器，每個請求可能落在不同的實例
-  若用記憶體儲存對話記憶/選擇狀態，不同實例間無法共享 → 必須用外部儲存
-- Firestore 提供即時一致性、自動 TTL（expires_at 手動檢查）、原生非同步 SDK
-- 與 GCP 生態系（Cloud Run、Cloud Scheduler）無縫整合，不需額外設定
-
-資料集合設計
------------
-┌──────────────────┬────────────────────────────────────────────────┐
-│ 集合名稱          │ 用途                                            │
-├──────────────────┼────────────────────────────────────────────────┤
-│ users            │ 已互動用戶登記（first_seen, last_seen）          │
-│ user_states      │ 多筆行程選擇的中間狀態（帶 expires_at TTL）      │
-│ conversation_history│ 近期對話記憶（供模型多輪理解上下文）          │
-│ reminders        │ 行程提醒記錄（reminder_at <= now 時推播）        │
-│ user_prefs       │ 使用者偏好（預設提醒分鐘數、通知開關）           │
-└──────────────────┴────────────────────────────────────────────────┘
-
-TTL 策略（手動實作，Firestore 無內建 TTL）：
-- user_states：expires_at 欄位，get 時檢查是否過期並刪除
-- conversation_history：updated_at + conversation_history_ttl_seconds，get 時檢查
-
-Singleton Client 設計：
-_db 全局唯一，避免重複建立 gRPC 連線（AsyncClient 內部維護連線池）
+Cloud Run 多實例之間無法共享記憶體，所以狀態都放這裡；TTL 由讀取時檢查。
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from google.cloud.firestore import AsyncClient
@@ -119,6 +97,13 @@ async def delete_user_state(line_user_id: str) -> None:
 # ── Conversation History (對話記憶) ──
 
 
+def _expired(data: dict) -> bool:
+    """對話記憶是否超過 conversation_history_ttl_seconds 沒更新。"""
+    updated_at = data.get("updated_at")
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.conversation_history_ttl_seconds)
+    return updated_at is not None and updated_at.replace(tzinfo=timezone.utc) < cutoff
+
+
 async def get_conversation_history(
     line_user_id: str,
 ) -> list[ConversationMessage]:
@@ -129,11 +114,9 @@ async def get_conversation_history(
         return []
 
     data = doc.to_dict()
-    updated_at = data.get("updated_at")
-    if updated_at is not None:
-        if updated_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) - timedelta(seconds=settings.conversation_history_ttl_seconds):
-            await doc_ref.delete()
-            return []
+    if _expired(data):
+        await doc_ref.delete()
+        return []
 
     messages_raw = data.get("messages", [])
     return [
@@ -157,12 +140,8 @@ async def append_conversation_turn(
     doc = await doc_ref.get()
 
     messages: list[dict] = []
-    if doc.exists:
-        data = doc.to_dict()
-        updated_at = data.get("updated_at")
-        if updated_at is not None:
-            if updated_at.replace(tzinfo=timezone.utc) >= datetime.now(timezone.utc) - timedelta(seconds=settings.conversation_history_ttl_seconds):
-                messages = data.get("messages", [])
+    if doc.exists and (data := doc.to_dict()).get("updated_at") is not None and not _expired(data):
+        messages = data.get("messages", [])
 
     messages.append({"role": "user", "content": user_message, "timestamp": now})
     messages.append({"role": "assistant", "content": assistant_message, "timestamp": now})
@@ -182,49 +161,52 @@ async def clear_conversation_history(line_user_id: str) -> None:
 # ── Reminders ──
 
 
-async def create_reminder(reminder_id: str, data: dict) -> None:
-    await get_db().collection("reminders").document(reminder_id).set(data)
+async def create_reminder(
+    line_user_id: str,
+    event_id: str,
+    event_summary: str,
+    start_time: datetime,
+    reminder_minutes: int,
+) -> None:
+    """建立提醒：reminder_at 到達時由 /internal/notify 推播，推完標 sent=True。"""
+    now = datetime.now(timezone.utc)
+    await get_db().collection("reminders").document(str(uuid.uuid4())).set({
+        "line_user_id": line_user_id,
+        "event_id": event_id,
+        "event_summary": event_summary,
+        "start_time": start_time,
+        "reminder_at": start_time - timedelta(minutes=reminder_minutes),
+        "reminder_minutes": reminder_minutes,
+        "sent": False,
+        "created_at": now,
+    })
 
 
-async def get_reminder_by_event(line_user_id: str, event_id: str) -> dict | None:
-    docs = await (
+def _user_event_reminders(line_user_id: str, event_id: str):
+    return (
         get_db()
         .collection("reminders")
         .where("line_user_id", "==", line_user_id)
         .where("event_id", "==", event_id)
-        .limit(1)
-        .get()
     )
+
+
+async def get_reminder_by_event(line_user_id: str, event_id: str) -> dict | None:
+    docs = await _user_event_reminders(line_user_id, event_id).limit(1).get()
     if not docs:
         return None
-    doc = docs[0]
-    return {"id": doc.id, **doc.to_dict()}
+    return {"id": docs[0].id, **docs[0].to_dict()}
 
 
 async def update_reminder_by_event(
     line_user_id: str, event_id: str, updates: dict
 ) -> None:
-    docs = await (
-        get_db()
-        .collection("reminders")
-        .where("line_user_id", "==", line_user_id)
-        .where("event_id", "==", event_id)
-        .limit(1)
-        .get()
-    )
-    for doc in docs:
+    for doc in await _user_event_reminders(line_user_id, event_id).limit(1).get():
         await doc.reference.update(updates)
 
 
 async def delete_reminder_by_event(line_user_id: str, event_id: str) -> None:
-    docs = await (
-        get_db()
-        .collection("reminders")
-        .where("line_user_id", "==", line_user_id)
-        .where("event_id", "==", event_id)
-        .get()
-    )
-    for doc in docs:
+    for doc in await _user_event_reminders(line_user_id, event_id).get():
         await doc.reference.delete()
 
 
@@ -292,12 +274,6 @@ async def save_sync_token(token: str) -> None:
     await get_db().collection("system").document("calendar_sync").set(
         {"sync_token": token, "synced_at": datetime.now(timezone.utc)}, merge=True
     )
-
-
-async def get_reminders_by_event_id(event_id: str) -> list[dict]:
-    """取得某 event_id 的所有 reminder（跨用戶）。"""
-    docs = await get_db().collection("reminders").where("event_id", "==", event_id).get()
-    return [{"id": doc.id, **doc.to_dict()} for doc in docs]
 
 
 async def delete_reminders_by_event_id(event_id: str) -> int:

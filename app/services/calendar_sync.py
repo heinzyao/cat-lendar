@@ -22,77 +22,49 @@ from app.services import auth
 from app.services.calendar import _execute, _get_service
 from app.config import settings
 from app.store import firestore as store
+from app.utils.datetime_utils import event_time
 
 logger = logging.getLogger(__name__)
 
 
-async def _full_sync_for_token() -> str | None:
-    """全量掃描，僅為取得初始 syncToken，不處理事件內容。"""
-    credentials = auth.get_shared_credentials()
-    service = _get_service(credentials)
-    params: dict = {
+async def _list_all(service, **extra) -> tuple[list[dict], str | None]:
+    """分頁取完所有變動事件，回傳 (events, nextSyncToken)。"""
+    params = {
         "calendarId": settings.google_calendar_id,
         "showDeleted": True,
         "singleEvents": True,
-        "maxResults": 250,
+        **extra,
     }
-    sync_token = None
+    events: list[dict] = []
     while True:
         result = await _execute(service.events().list(**params))
-        sync_token = result.get("nextSyncToken")
+        events.extend(result.get("items", []))
         page_token = result.get("nextPageToken")
         if not page_token:
-            break
-        params = {
-            "calendarId": settings.google_calendar_id,
-            "showDeleted": True,
-            "singleEvents": True,
-            "pageToken": page_token,
-        }
-    return sync_token
+            return events, result.get("nextSyncToken")
+        # 換頁時只能帶 pageToken，不能再帶 syncToken
+        params = {k: v for k, v in params.items() if k != "syncToken"}
+        params["pageToken"] = page_token
 
 
 async def run_sync() -> dict:
     """執行一次增量同步，回傳 {deleted, updated, token_reset}。"""
-    credentials = auth.get_shared_credentials()
-    service = _get_service(credentials)
+    service = _get_service(auth.get_shared_credentials())
     sync_token = await store.get_sync_token()
 
-    params: dict = {
-        "calendarId": settings.google_calendar_id,
-        "showDeleted": True,
-        "singleEvents": True,
-    }
-    if sync_token:
-        params["syncToken"] = sync_token
-
-    all_events: list[dict] = []
-    new_sync_token: str | None = None
-
-    while True:
-        try:
-            result = await _execute(service.events().list(**params))
-        except HttpError as e:
-            if e.status_code == 410:
-                logger.warning("syncToken expired, performing full sync to reset token")
-                new_sync_token = await _full_sync_for_token()
-                if new_sync_token:
-                    await store.save_sync_token(new_sync_token)
-                return {"deleted": 0, "updated": 0, "token_reset": True}
+    try:
+        all_events, new_sync_token = await _list_all(
+            service, **({"syncToken": sync_token} if sync_token else {})
+        )
+    except HttpError as e:
+        if e.status_code != 410:
             raise
-
-        all_events.extend(result.get("items", []))
-        page_token = result.get("nextPageToken")
-        if page_token:
-            params = {
-                "calendarId": settings.google_calendar_id,
-                "showDeleted": True,
-                "singleEvents": True,
-                "pageToken": page_token,
-            }
-        else:
-            new_sync_token = result.get("nextSyncToken")
-            break
+        # token 過期：全量掃描只為重設 token，本次不處理事件
+        logger.warning("syncToken expired, performing full sync to reset token")
+        _, new_sync_token = await _list_all(service, maxResults=250)
+        if new_sync_token:
+            await store.save_sync_token(new_sync_token)
+        return {"deleted": 0, "updated": 0, "token_reset": True}
 
     stats = {"deleted": 0, "updated": 0, "token_reset": False}
 
@@ -104,8 +76,7 @@ async def run_sync() -> dict:
                 logger.info("Sync: deleted %d reminder(s) for cancelled event %s", deleted, event_id)
             stats["deleted"] += deleted
         else:
-            start = event.get("start", {})
-            start_str = start.get("dateTime", start.get("date", ""))
+            start_str = event_time(event, "start")
             if start_str:
                 try:
                     new_start = datetime.fromisoformat(start_str)

@@ -113,8 +113,7 @@ cat-lendar/
 │   ├── config.py               # pydantic-settings bindings
 │   ├── routes/
 │   │   ├── webhook.py          # POST /webhook (LINE event reception)
-│   │   ├── notify.py           # POST /notify (Scheduled reminder triggering)
-│   │   └── sync.py             # POST /internal/sync (Calendar → Firestore incremental sync)
+│   │   └── notify.py           # POST /internal/notify + /internal/sync (Cloud Scheduler)
 │   ├── services/
 │   │   ├── nlp.py              # Gemini API intent parsing
 │   │   ├── calendar.py         # Google Calendar CRUD
@@ -320,8 +319,7 @@ cat-lendar/
 │   ├── config.py               # pydantic-settings 設定
 │   ├── routes/
 │   │   ├── webhook.py          # POST /webhook（LINE 事件接收）
-│   │   ├── notify.py           # POST /notify（到期提醒排程）
-│   │   └── sync.py             # POST /internal/sync（Calendar → Firestore 增量同步）
+│   │   └── notify.py           # POST /internal/notify、/internal/sync（Cloud Scheduler）
 │   ├── services/
 │   │   ├── nlp.py              # Gemini API 意圖解析
 │   │   ├── calendar.py         # Google Calendar CRUD

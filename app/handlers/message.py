@@ -1,42 +1,8 @@
-"""訊息處理協調器：LINE 訊息 → 意圖解析 → 日曆操作 → 回覆使用者。
+"""訊息處理協調器：LINE 訊息 → 固定指令／選擇狀態／Gemini 意圖解析 → 日曆操作 → 回覆。
 
-架構說明
---------
-此模組是整個 Bot 的核心業務邏輯層，負責協調各服務：
-
-  LINE 訊息
-       ↓
-  handle_message()          ← 主入口：前置處理 + 意圖分派
-       ├─ 特殊指令（說明/提醒設定/通知開關）  ← 不走 NLP，直接處理
-       ├─ 選擇狀態（等待使用者選第幾筆）       ← 中斷狀態機
-       └─ Gemini NLP 解析 → _execute_intent() ← 一般自然語言輸入
-              ├─ CREATE  → _handle_create()
-              ├─ QUERY   → _handle_query()
-              ├─ UPDATE  → _handle_update()
-              ├─ DELETE  → _handle_delete()
-              └─ SET_REMINDER → _handle_set_reminder()
-
-設計決策
---------
-1. fire-and-forget 登記用戶：
-   asyncio.create_task(store.register_user()) 不 await，
-   確保不因 Firestore 延遲拖慢主要回覆路徑
-
-2. 對話記憶（conversation_history）：
-   每次呼叫 nlp.parse_intent() 前先讀取記憶，
-   讓模型理解「改成明天」等依賴前文的指令
-
-3. 多筆事件的選擇狀態機：
-   當 update/delete 找到多筆符合的行程時，先將候選存入 Firestore（UserState），
-   Bot 詢問使用者選擇編號 → 下一輪訊息進入 _handle_selection() 處理
-   這是有狀態對話（stateful conversation）的設計，比重新呼叫 NLP 更可靠
-
-4. confidence 門檻 0.5：
-   低於此值表示模型無法判斷意圖，改為詢問澄清，避免誤操作行程
-
-5. 二階段 update 解析：
-   update 操作先以 parse_intent() 定位行程（第一階段），
-   找到行程後再以 parse_update_details() 結合原始行程資料精算更新值（第二階段）
+- update/delete 找到多筆時把候選存 Firestore（UserState），下一則訊息選編號
+- confidence < 0.5 一律先問清楚，避免誤改行程
+- update 二階段解析：先定位行程，再帶原行程給 parse_update_details 精算（「延後 30 分鐘」要知道原時間）
 """
 
 from __future__ import annotations
@@ -44,17 +10,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import uuid
 from datetime import datetime, timedelta, timezone
 
 from linebot.v3.messaging.exceptions import ApiException
 
-from app.models.intent import ActionType, CalendarIntent, EventDetails, TimeRange
+from app.models.intent import ActionType, CalendarIntent, TimeRange
 from app.models.user import UserState
 from app.services import auth, calendar, calendar_notify, line_messaging, nlp
 from app.services.nlp import RateLimitExceeded
 from app.store import firestore as store
 from app.utils import i18n
+from app.utils.datetime_utils import event_time, format_event_time
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -296,16 +262,7 @@ async def _handle_query(
         await line_messaging.reply_text(reply_token, reply_msg)
         return reply_msg
 
-    lines = [i18n.EVENTS_LIST_HEADER]
-    for idx, event in enumerate(events, 1):
-        lines.append(
-            i18n.EVENT_LIST_ITEM.format(
-                index=idx,
-                summary=event.get("summary", "(無標題)"),
-                time=_get_event_time_str(event),
-            )
-        )
-    msg = "".join(lines).strip()
+    msg = (i18n.EVENTS_LIST_HEADER + _format_event_list(events)).strip()
     reply_msg = _with_assumption_note(msg, intent)
     await line_messaging.reply_text(reply_token, reply_msg)
     return reply_msg
@@ -336,26 +293,10 @@ async def _handle_update(
         return reply_msg
 
     if len(events) == 1:
-        # 二次解析：將原始行程資料傳給 Gemini，讓它精確計算需更新的欄位
-        update_details = None
-        if intent.original_message:
-            update_details = await nlp.parse_update_details(intent.original_message, events[0], user_id=user_id)
-        # 降級 fallback：二次解析失敗時使用第一階段的結果
-        details_to_use = update_details or intent.event_details
-        updated = await calendar.update_event(credentials, events[0]["id"], details_to_use, line_user_id=user_id)
-        time_str = _get_event_time_str(updated)
-        msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
-        reply_msg = _with_assumption_note(msg, intent)
-        await line_messaging.reply_text(reply_token, reply_msg)
-
-        # 通知其他用戶此行程已被修改
-        await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
-
-        return reply_msg
-    else:
-        # 多筆符合：進入選擇狀態機，要求使用者指定要修改哪一筆
-        await _save_selection_state(user_id, "select_event_for_update", events, intent)
-        return await _reply_selection(reply_token, events)
+        return await _apply_update(user_id, reply_token, events[0], intent, credentials)
+    # 多筆符合：進入選擇狀態機，要求使用者指定要修改哪一筆
+    await _save_selection_state(user_id, "select_event_for_update", events, intent)
+    return await _reply_selection(reply_token, events)
 
 
 async def _handle_delete(
@@ -371,19 +312,37 @@ async def _handle_delete(
         return reply_msg
 
     if len(events) == 1:
-        summary = events[0].get("summary", "(無標題)")
-        await calendar.delete_event(credentials, events[0]["id"], line_user_id=user_id)
-        msg = i18n.EVENT_DELETED.format(summary=summary)
-        reply_msg = _with_assumption_note(msg, intent)
-        await line_messaging.reply_text(reply_token, reply_msg)
+        return await _apply_delete(user_id, reply_token, events[0], intent, credentials)
+    await _save_selection_state(user_id, "select_event_for_delete", events, intent)
+    return await _reply_selection(reply_token, events)
 
-        # 通知其他用戶
-        await calendar_notify.notify_others("delete", user_id, summary)
 
-        return reply_msg
-    else:
-        await _save_selection_state(user_id, "select_event_for_delete", events, intent)
-        return await _reply_selection(reply_token, events)
+async def _apply_update(
+    user_id: str, reply_token: str, event: dict, intent: CalendarIntent, credentials
+) -> str:
+    """修改單一行程：二次解析精算更新值（失敗時退回第一階段結果）→ 更新 → 回覆 → 通知。"""
+    update_details = None
+    if intent.original_message:
+        update_details = await nlp.parse_update_details(intent.original_message, event, user_id=user_id)
+    details_to_use = update_details or intent.event_details
+    updated = await calendar.update_event(credentials, event["id"], details_to_use, line_user_id=user_id)
+    time_str = _get_event_time_str(updated)
+    msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
+    reply_msg = _with_assumption_note(msg, intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
+    await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
+    return reply_msg
+
+
+async def _apply_delete(
+    user_id: str, reply_token: str, event: dict, intent: CalendarIntent, credentials
+) -> str:
+    summary = event.get("summary", "(無標題)")
+    await calendar.delete_event(credentials, event["id"], line_user_id=user_id)
+    reply_msg = _with_assumption_note(i18n.EVENT_DELETED.format(summary=summary), intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
+    await calendar_notify.notify_others("delete", user_id, summary)
+    return reply_msg
 
 
 async def _handle_selection(
@@ -423,41 +382,14 @@ async def _handle_selection(
     selected = candidates[choice - 1]
     await store.delete_user_state(user_id)
 
+    apply = _apply_update if user_state.action == "select_event_for_update" else _apply_delete
     try:
-        if user_state.action == "select_event_for_update":
-            intent = CalendarIntent.model_validate(user_state.original_intent)
-            update_details = None
-            if intent.original_message:
-                update_details = await nlp.parse_update_details(intent.original_message, selected, user_id=user_id)
-            details_to_use = update_details or intent.event_details
-            updated = await calendar.update_event(credentials, selected["id"], details_to_use, line_user_id=user_id)
-            time_str = _get_event_time_str(updated)
-            msg = i18n.EVENT_UPDATED.format(summary=updated.get("summary", ""), time=time_str)
-            reply_msg = _with_assumption_note(msg, intent)
-            await line_messaging.reply_text(reply_token, reply_msg)
-
-            # 通知其他用戶
-            await calendar_notify.notify_others("update", user_id, updated.get("summary", ""), time_str)
-
-            return reply_msg
-
-        elif user_state.action == "select_event_for_delete":
-            summary = selected.get("summary", "(無標題)")
-            await calendar.delete_event(credentials, selected["id"], line_user_id=user_id)
-            msg = i18n.EVENT_DELETED.format(summary=summary)
-            intent = CalendarIntent.model_validate(user_state.original_intent)
-            reply_msg = _with_assumption_note(msg, intent)
-            await line_messaging.reply_text(reply_token, reply_msg)
-
-            # 通知其他用戶
-            await calendar_notify.notify_others("delete", user_id, summary)
-
-            return reply_msg
+        intent = CalendarIntent.model_validate(user_state.original_intent)
+        return await apply(user_id, reply_token, selected, intent, credentials)
     except Exception:
         logger.exception("Selection action failed")
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
         return i18n.CALENDAR_ERROR
-    return None
 
 
 # ── Helpers ──
@@ -500,30 +432,22 @@ async def _save_selection_state(
 
 
 async def _reply_selection(reply_token: str, events: list[dict]) -> str:
-    lines = [i18n.MULTIPLE_EVENTS_FOUND]
-    for idx, event in enumerate(events, 1):
-        lines.append(
-            i18n.EVENT_LIST_ITEM.format(
-                index=idx,
-                summary=event.get("summary", "(無標題)"),
-                time=_get_event_time_str(event),
-            )
-        )
-    lines.append(i18n.SELECT_PROMPT)
-    msg = "".join(lines).strip()
+    msg = (i18n.MULTIPLE_EVENTS_FOUND + _format_event_list(events) + i18n.SELECT_PROMPT).strip()
     await line_messaging.reply_text(reply_token, msg)
     return msg
 
 
-def _get_event_time_str(event: dict) -> str:
-    from app.utils.datetime_utils import format_event_time
-
-    start = event.get("start", {})
-    end = event.get("end", {})
-    return format_event_time(
-        start.get("dateTime", start.get("date", "")),
-        end.get("dateTime", end.get("date", "")),
+def _format_event_list(events: list[dict]) -> str:
+    return "".join(
+        i18n.EVENT_LIST_ITEM.format(
+            index=idx, summary=e.get("summary", "(無標題)"), time=_get_event_time_str(e)
+        )
+        for idx, e in enumerate(events, 1)
     )
+
+
+def _get_event_time_str(event: dict) -> str:
+    return format_event_time(event_time(event, "start"), event_time(event, "end"))
 
 
 async def _handle_set_default_reminder(user_id: str, reply_token: str, text: str) -> None:
@@ -567,15 +491,12 @@ async def _handle_set_reminder(
     event = events[0]
     event_id = event["id"]
 
-    start_raw = event.get("start", {})
-    start_str = start_raw.get("dateTime", start_raw.get("date", ""))
     try:
-        start_time = datetime.fromisoformat(start_str)
+        start_time = datetime.fromisoformat(event_time(event, "start"))
     except (ValueError, TypeError):
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
         return i18n.CALENDAR_ERROR
 
-    now = datetime.now(timezone.utc)
     reminder_at = start_time.astimezone(timezone.utc) - timedelta(minutes=reminder_minutes)
 
     existing = await store.get_reminder_by_event(user_id, event_id)
@@ -588,17 +509,9 @@ async def _handle_set_reminder(
         })
         msg = i18n.REMINDER_UPDATED.format(minutes=reminder_minutes)
     else:
-        reminder_id = str(uuid.uuid4())
-        await store.create_reminder(reminder_id, {
-            "line_user_id": user_id,
-            "event_id": event_id,
-            "event_summary": event.get("summary", ""),
-            "start_time": start_time,
-            "reminder_at": reminder_at,
-            "reminder_minutes": reminder_minutes,
-            "sent": False,
-            "created_at": now,
-        })
+        await store.create_reminder(
+            user_id, event_id, event.get("summary", ""), start_time, reminder_minutes
+        )
         msg = i18n.REMINDER_SET.format(minutes=reminder_minutes)
 
     reply_msg = _with_assumption_note(msg, intent)

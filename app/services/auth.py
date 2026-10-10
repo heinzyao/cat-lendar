@@ -1,15 +1,5 @@
-"""Google 認證模組：建立用於操作 Google Calendar API 的 Service Account 憑證。
-
-架構設計——Service Account（伺服器對伺服器）
--------------------------------------------
-使用 Service Account 取代 OAuth User Credentials：
-- 憑證永不過期，無需定期重新授權
-- 適合 Cloud Run → Google Calendar 的伺服器端存取
-- 金鑰 JSON 儲存於 Secret Manager，啟動時透過環境變數 GOOGLE_SERVICE_ACCOUNT_JSON 注入
-
-前置條件（一次性設定）：
-  ./scripts/setup_service_account.sh
-"""
+"""Service Account 憑證（共享日曆）。金鑰 JSON 由 Secret Manager 以 GOOGLE_SERVICE_ACCOUNT_JSON 注入；
+初次設定：./scripts/setup_service_account.sh"""
 
 from __future__ import annotations
 

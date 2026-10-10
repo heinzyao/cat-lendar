@@ -19,7 +19,6 @@ SELECT_PROMPT = "\n請回覆數字（如：1）"
 CLARIFICATION_NEEDED = "嗯... 我有點不太懂 🤔\n{message}"
 PARSE_ERROR = "不好意思，我聽不太懂這個指令 😅\n你可以隨性一點說，例如：\n• 幫我記下明天下午三點要開會\n• 這週有什麼安排嗎？\n• 幫我取消明天的晚餐"
 CALENDAR_ERROR = "操作行事曆時發生錯誤，請稍後再試。"
-GENERAL_ERROR = "系統發生錯誤，請稍後再試。"
 
 # Cross-user notifications
 NOTIFY_EVENT_CREATED = "📅 {name} 在日曆上新增了活動呦：\n📌 {summary}\n🕐 {time}"
@@ -32,8 +31,6 @@ NOTIFY_DISABLED = "🔕 已關閉行事曆異動通知，之後不會再推播�
 # Reminders
 REMINDER_SET = "⏰ 沒問題！會在 {minutes} 分鐘前提醒你喔。"
 REMINDER_UPDATED = "⏰ 已更新提醒設定：開始前 {minutes} 分鐘"
-REMINDER_DELETED = "🔕 已取消行程提醒"
-REMINDER_NOTIFICATION = "⏰ 提醒：{summary} 將在 {minutes} 分鐘後開始\n🕐 {time}"
 DEFAULT_REMINDER_SET = "✅ 已設定預設提醒：每個行程開始前 {minutes} 分鐘提醒"
 DEFAULT_REMINDER_CLEARED = "✅ 已關閉預設提醒"
 REMINDER_EVENT_NOT_FOUND = "找不到符合的行程，請確認行程名稱或時間。"

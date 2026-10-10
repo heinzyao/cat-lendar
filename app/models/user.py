@@ -1,26 +1,10 @@
-"""使用者狀態與對話記憶的資料模型。
-
-設計理由——為何使用 Pydantic 而非一般 dataclass？
-- Pydantic 的 model_validate() 支援從 Firestore dict 直接建構物件（自動型別轉換）
-- model_dump(mode="json") 可將 datetime 序列化為字串（存入 Firestore 時必需）
-- 型別宣告即文件，清楚說明各欄位的用途與型別
-
-UserState 的生命週期：
-  1. update/delete 找到多筆行程時，handlers/message.py 呼叫 store.save_user_state()
-  2. 使用者輸入選擇編號時，handlers/message.py 讀取 UserState 執行操作
-  3. 操作完成後（或 expires_at 到期）清除 UserState
-
-ConversationHistory 的使用方式：
-  Firestore 只儲存最近 max_conversation_turns 輪（messages 列表），
-  實際上 get_conversation_history() 回傳 list[ConversationMessage] 供 NLP 使用，
-  ConversationHistory 模型主要用於文件說明，不直接在程式中使用
-"""
+"""使用者多步驟選擇狀態與對話記憶的資料模型（存 Firestore）。"""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class UserState(BaseModel):
@@ -51,10 +35,3 @@ class ConversationMessage(BaseModel):
     role: str        # "user" | "assistant"（內部格式，送出前轉為 Gemini 的 user/model）
     content: str     # 訊息內容
     timestamp: datetime  # 訊息時間（UTC）
-
-
-class ConversationHistory(BaseModel):
-    """使用者的近期對話記憶（文件說明用，實際操作透過 list[ConversationMessage]）。"""
-    line_user_id: str
-    messages: list[ConversationMessage] = Field(default_factory=list)
-    updated_at: datetime  # 最後更新時間，用於 TTL 計算

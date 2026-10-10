@@ -1,27 +1,7 @@
-"""NLP 服務模組：使用 Gemini API 將自然語言訊息解析為結構化日曆操作意圖。
+"""Gemini 意圖解析：自然語言 → CalendarIntent。
 
-設計理由
---------
-為什麼選用 Gemini 而非規則解析？
-- 自然語言日程輸入極為多變：「後天下午開會」、「把三點的會議推到四點」、
-  「下週四午餐約會改成週五」等，規則窮舉不切實際
-- Gemini 支援 multi-turn 對話，可利用前幾輪的脈絡理解代名詞與省略
-- 直接輸出 JSON，省去 NLP → structured data 的中間層
-
-Prompt 設計策略
----------------
-1. 輸出結構交給協議層：`response_schema` 直接吃 Pydantic 模型，欄位、型別、
-   enum 值都由 API 保證，prompt 只描述「怎麼判斷」，不再描述「長什麼樣子」
-2. 易變內容排在 prompt 尾端：當前時間、時區、原始行程都放最後，
-   前面的規則才能構成穩定的可快取前綴
-3. 推定規則：要求 Gemini 盡量推定不明確的資訊，僅在真正無法判斷時才要求澄清，
-   以降低使用者操作成本
-4. 二階段解析：update 操作先用 parse_intent() 定位行程，再用 parse_update_details()
-   結合原始行程資料精確計算時間差異（如「延後 30 分鐘」需知道原始時間）
-
-Singleton Client 設計：
-`genai.Client` 全局只建一次；system_instruction 含即時時間，逐次呼叫時放在
-`GenerateContentConfig` 裡，不需要為此重建 client。
+- 輸出結構由 response_schema 在協議層約束，prompt 只描述「怎麼判斷」
+- 每分鐘變動的當前時間放 prompt 尾端，前面的規則才能當穩定的快取前綴
 """
 
 from __future__ import annotations
@@ -29,6 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from datetime import datetime
 
 from google import genai
 from google.genai import types
@@ -36,7 +17,7 @@ from google.genai import types
 from app.config import settings
 from app.models.intent import CalendarIntent, CalendarIntentPayload, EventDetails
 from app.models.user import ConversationMessage
-from app.utils.datetime_utils import now_local, weekday_name
+from app.utils.datetime_utils import event_time, local_tz, now_local, weekday_name
 
 logger = logging.getLogger(__name__)
 
@@ -212,17 +193,9 @@ async def parse_intent(
 
 def _format_event_for_prompt(event: dict) -> str:
     """將 Calendar 格式的 event 轉成 prompt 可讀文字"""
-    from datetime import datetime
-
-    from app.utils.datetime_utils import local_tz
-
     tz = local_tz()
     summary = event.get("summary", "(無標題)")
-
-    start_raw = event.get("start", {})
-    end_raw = event.get("end", {})
-    start_str = start_raw.get("dateTime", start_raw.get("date", ""))
-    end_str = end_raw.get("dateTime", end_raw.get("date", ""))
+    start_str, end_str = event_time(event, "start"), event_time(event, "end")
 
     try:
         start_dt = datetime.fromisoformat(start_str).astimezone(tz)

@@ -1,18 +1,4 @@
-"""意圖模型模組：定義 NLP 解析結果的資料結構。
-
-設計理由
---------
-使用 Pydantic BaseModel 作為資料容器，原因：
-1. 同時作為 Gemini 的 response_schema，欄位與型別由 API 在協議層保證
-2. model_validate() 支援從 dict 直接建構，與 json.loads() 搭配無縫
-3. 所有欄位預設為 None，容忍模型省略非必要欄位
-4. model_dump(mode="json") 可將 datetime 序列化為字串，存入 Firestore 時使用
-
-意圖流程
---------
-使用者訊息 → Gemini（response_schema）→ response.parsed → CalendarIntent
-→ handlers/message.py 依 action 分派至對應處理函式
-"""
+"""NLP 解析結果的資料結構。CalendarIntentPayload 同時是 Gemini 的 response_schema。"""
 
 from __future__ import annotations
 

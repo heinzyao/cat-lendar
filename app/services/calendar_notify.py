@@ -38,18 +38,12 @@ async def notify_others(
         if not display_name:
             display_name = f"用戶 ...{actor_user_id[-4:]}"
 
-        if action == "create":
-            msg = i18n.NOTIFY_EVENT_CREATED.format(
-                name=display_name, summary=summary, time=time_str or ""
-            )
-        elif action == "update":
-            msg = i18n.NOTIFY_EVENT_UPDATED.format(
-                name=display_name, summary=summary, time=time_str or ""
-            )
-        else:  # delete
-            msg = i18n.NOTIFY_EVENT_DELETED.format(
-                name=display_name, summary=summary
-            )
+        template = {
+            "create": i18n.NOTIFY_EVENT_CREATED,
+            "update": i18n.NOTIFY_EVENT_UPDATED,
+            "delete": i18n.NOTIFY_EVENT_DELETED,
+        }[action]
+        msg = template.format(name=display_name, summary=summary, time=time_str or "")
 
         await asyncio.gather(
             *[_try_push(uid, msg) for uid in others],

@@ -21,8 +21,8 @@ app/
 ├── config.py                # 所有環境變數（pydantic-settings），必填值缺了啟動即失敗
 ├── routes/
 │   ├── webhook.py           # POST /webhook — LINE 訊息
-│   ├── notify.py            # POST /internal/notify — Cloud Scheduler 每分鐘觸發提醒（NOTIFY_SECRET 驗證）
-│   └── sync.py              # POST /internal/sync — Cloud Scheduler 每 5 分鐘同步日曆變動至 Firestore
+│   └── notify.py            # Cloud Scheduler 內部端點（NOTIFY_SECRET 驗證）：
+│                            #   POST /internal/notify 每分鐘推播提醒、POST /internal/sync 每 5 分鐘同步日曆
 ├── handlers/message.py      # ★ 核心：訊息 → NLP → 日曆操作 → 跨用戶通知
 ├── services/
 │   ├── nlp.py               # ★ parse_intent / parse_update_details（schema 由 response_schema 約束）

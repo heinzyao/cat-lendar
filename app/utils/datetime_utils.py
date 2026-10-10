@@ -1,29 +1,8 @@
-"""時間工具模組：時區感知的時間操作與格式化。
-
-設計理由
---------
-集中管理所有時間相關操作，原因：
-1. 時區轉換在多處使用（NLP 注入當前時間、Calendar API 格式轉換、提醒計算），
-   集中管理避免各處重複的 datetime.now() + ZoneInfo 組合
-2. Google Calendar API 要求特定格式（RFC3339 含時區，或 YYYY-MM-DD）
-3. 顯示給使用者的時間必須為本地時區（Asia/Taipei），不能是 UTC
-
-_tz 為模組級別的 ZoneInfo 物件（Singleton 設計）：
-- ZoneInfo 的建立有一定開銷（讀取時區資料庫），模組級別初始化一次即可
-- 所有函式共用同一個 _tz 實例，確保時區一致性
-
-format_event_time 的顯示邏輯：
-- 同一天的行程：「2026/03/08(Sun) 14:00–15:00」（省略結束日期，更簡潔）
-- 跨天行程：「2026/03/08(Sun) 22:00 – 2026/03/09(Mon) 02:00」（含兩端完整日期）
-- 全天事件（date 格式）：「2026-03-08 – 2026-03-09」（直接顯示 date string）
-  datetime.fromisoformat 無法解析純 date string 時 fallback 至此
-
-weekday_name 使用中文星期名稱供 system prompt 與使用者回覆使用
-"""
+"""時區感知的時間工具（本地時區 settings.timezone）與 Google Calendar 時間格式轉換。"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
@@ -48,11 +27,6 @@ def today_start() -> datetime:
     return now_local().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def today_end() -> datetime:
-    """今日 23:59:59（以明日 00:00:00 表示，方便作為 timeMax 使用）。"""
-    return today_start() + timedelta(days=1)
-
-
 def to_rfc3339(dt: datetime) -> str:
     """將 datetime 轉換為 Google Calendar API 要求的 RFC3339 格式。
 
@@ -72,6 +46,12 @@ def to_date_str(dt: datetime) -> str:
     {"start": {"date": "2026-03-08"}} 而非 {"start": {"dateTime": "2026-03-08T..."}}
     """
     return dt.strftime("%Y-%m-%d")
+
+
+def event_time(event: dict, key: str) -> str:
+    """Google Calendar event 的 start/end 字串（定時事件取 dateTime，全天事件取 date）。"""
+    when = event.get(key, {})
+    return when.get("dateTime", when.get("date", ""))
 
 
 def format_event_time(start: str, end: str) -> str:

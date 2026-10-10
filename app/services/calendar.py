@@ -1,37 +1,15 @@
-"""Google Calendar API 操作層：建立、查詢、更新、刪除行程。
+"""Google Calendar CRUD（共享日曆）。
 
-設計理由
---------
-此模組封裝所有 Google Calendar API 呼叫，提供以下幾項關鍵設計：
-
-1. 共享日曆架構：
-   所有操作都針對同一個 Google Calendar（settings.google_calendar_id），
-   使用 App Owner 的憑證（auth.get_shared_credentials()），
-   不需要每位 LINE 使用者各自授權 Google OAuth，大幅降低使用門檻。
-
-2. LINE 操作者標記（_build_description）：
-   在每個行程的 description 中附加 [LINE: {line_user_id}]，
-   用於追蹤「是誰建立/修改了這個行程」，支援跨用戶通知功能。
-   使用 regex 移除舊標記後再寫入，確保標記不會重複累積。
-
-3. 提醒雙重機制：
-   - Google Calendar 原生提醒：透過 event body 的 reminders 欄位設定
-   - Bot 自訂提醒：在 Firestore 建立 reminder 記錄，由 Cloud Scheduler 定時觸發
-   兩者同時設定確保即使 Google Calendar 提醒未能送達，Bot 仍可推播 LINE 通知。
-
-4. 同步/非同步混用：
-   Google Calendar API SDK 是同步的（blocking IO），
-   FastAPI 的 async handler 會在 threadpool 中自動執行同步 IO，
-   但若未來效能有問題可考慮改用 httpx 直接呼叫 REST API。
+- 每個行程的 description 附加操作者 [LINE: {user_id}]，供跨用戶通知追蹤
+- 有提醒時同時設 Google Calendar popup 與 Firestore reminder：popup 不會推 LINE
 """
 
 from __future__ import annotations
 
 import logging
 import re
-import uuid
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
 from google.oauth2.credentials import Credentials
@@ -40,7 +18,7 @@ from googleapiclient.discovery import build
 from app.config import settings
 from app.models.intent import EventDetails, TimeRange
 from app.store import firestore as store
-from app.utils.datetime_utils import format_event_time, to_date_str, to_rfc3339
+from app.utils.datetime_utils import to_date_str, to_rfc3339
 
 logger = logging.getLogger(__name__)
 
@@ -143,21 +121,8 @@ async def create_event(
 
     # 若有提醒設定，同步寫入 Firestore 供 Bot 定時推播 LINE 通知
     if effective_minutes is not None and line_user_id and details.start_time:
-        reminder_id = str(uuid.uuid4())  # 使用 UUID 避免 ID 衝突
-        now = datetime.now(timezone.utc)
-        reminder_at = details.start_time - timedelta(minutes=effective_minutes)
         await store.create_reminder(
-            reminder_id,
-            {
-                "line_user_id": line_user_id,
-                "event_id": event["id"],
-                "event_summary": details.summary or "",
-                "start_time": details.start_time,
-                "reminder_at": reminder_at,  # 到達此時間點時推播通知
-                "reminder_minutes": effective_minutes,
-                "sent": False,  # Cloud Scheduler 推播後標記為 True
-                "created_at": now,
-            },
+            line_user_id, event["id"], details.summary or "", details.start_time, effective_minutes
         )
 
     return event
@@ -260,20 +225,3 @@ async def delete_event(
     )
     if line_user_id:
         await store.delete_reminder_by_event(line_user_id, event_id)
-
-
-def format_event_summary(event: dict[str, Any]) -> str:
-    """格式化單一 event 供顯示"""
-    summary = event.get("summary", "(無標題)")
-    start = event.get("start", {})
-    end = event.get("end", {})
-
-    start_str = start.get("dateTime", start.get("date", ""))
-    end_str = end.get("dateTime", end.get("date", ""))
-
-    time_str = format_event_time(start_str, end_str)
-    location = event.get("location", "")
-    parts = [f"📌 {summary}", f"🕐 {time_str}"]
-    if location:
-        parts.append(f"📍 {location}")
-    return "\n".join(parts)
