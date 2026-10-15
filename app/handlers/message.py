@@ -59,10 +59,14 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
     """
     text = text.strip()
 
-    # 背景登記用戶（fire-and-forget）
-    # 設計理由：register_user 僅更新 last_seen，非核心路徑，不需等待其完成
-    # 若此任務失敗也不影響主要功能，僅有跨用戶推播通知的資料可能遺漏
-    asyncio.create_task(store.register_user(user_id))
+    # 登記用戶（跨用戶推播只送給已登記者）
+    # 設計理由：必須 await——背景 task 沒有參照可能被 GC，且 Cloud Run 回應送出後
+    # 會節流 CPU，短路徑（如「說明」）回完就可能跑不完；失敗或逾時只記 log，不擋主流程
+    # 上限 3 秒：Firestore 預設重試可拖數十秒，會吃掉 reply token 的時效
+    try:
+        await asyncio.wait_for(store.register_user(user_id), timeout=3)
+    except Exception:
+        logger.exception("register_user failed for %s", user_id)
 
     # ── 特殊指令（繞過 NLP，直接處理）──
     # 設計理由：這些是固定的操作指令，不需要 AI 解析，也不需要消耗 API token

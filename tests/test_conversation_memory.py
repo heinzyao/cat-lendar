@@ -406,3 +406,18 @@ async def test_handle_message_saves_conversation_on_clarification():
     mock_store.append_conversation_turn.assert_awaited_once()
 
 
+async def test_handle_message_register_user_failure_does_not_block_reply():
+    """register_user 失敗只記 log，仍要回覆使用者"""
+    with (
+        patch("app.handlers.message.store") as mock_store,
+        patch("app.handlers.message.line_messaging") as mock_line,
+    ):
+        mock_store.register_user = AsyncMock(side_effect=RuntimeError("firestore down"))
+        mock_line.reply_text = AsyncMock()
+
+        from app.handlers.message import handle_message
+
+        await handle_message(_USER, "reply_token_123", "說明")
+
+        mock_store.register_user.assert_awaited_once_with(_USER)
+        mock_line.reply_text.assert_awaited_once()

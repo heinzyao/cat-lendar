@@ -108,3 +108,22 @@ Google Calendar 查詢也成功，只差把結果送回 LINE。
 
 至此整個遷移完成：SDK 換血、schema 移到協議層、註解同步、錯誤處理分流，
 單元測試（71）、真實 API 呼叫、production log、真實 LINE 回覆四層都驗過。
+
+---
+
+# 修正 secret 比對與 register_user 背景執行（2026-10-16）
+
+- [x] `/internal/*` 的 secret 比對改用 `hmac.compare_digest`（原本 `!=` 有 timing side channel）
+- [x] `register_user` 從 `asyncio.create_task` 改為 await（加 3 秒上限與 try/except）：
+      背景 task 沒有參照會被 GC，Cloud Run 回應後又會節流 CPU，「說明」這類短路徑可能跑不完，
+      漏登記的用戶就收不到跨用戶通知
+- [x] 測試：register_user 拋例外仍要回覆（74 passed）
+- [ ] 部署
+
+## Review（agy，claude-opus-5-5-high）
+
+- 採用：Firestore 慢時 await 會拖住回覆 → 加 `asyncio.wait_for(..., timeout=3)`
+- 採用：新測試前多兩行空行 → 已刪
+- 不採用：log 裡的 LINE user ID — 跟其他地方的 log 慣例一致，要改就一次改全部
+- 不採用：非 ASCII 的 secret 會永遠比對失敗 — secret 是 ASCII，就算不是也是拒絕請求，不會誤放行
+- 不採用：測試 mock 可能 await 不到 — 實際跑過有通過

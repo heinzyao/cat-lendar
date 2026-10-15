@@ -6,6 +6,7 @@ notify_secret 未設定時一律拒絕——寧可功能停用也不要無驗證
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 def _require_internal_secret(request: Request) -> None:
     secret = request.headers.get("X-Internal-Secret", "")
-    if not settings.notify_secret or secret != settings.notify_secret:
+    if not settings.notify_secret or not hmac.compare_digest(
+        secret.encode(), settings.notify_secret.encode()
+    ):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
