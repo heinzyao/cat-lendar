@@ -118,7 +118,8 @@ Google Calendar 查詢也成功，只差把結果送回 LINE。
       背景 task 沒有參照會被 GC，Cloud Run 回應後又會節流 CPU，「說明」這類短路徑可能跑不完，
       漏登記的用戶就收不到跨用戶通知
 - [x] 測試：register_user 拋例外仍要回覆（74 passed）
-- [ ] 部署
+- [x] 部署（revision 00057）：錯誤或缺少 secret 回 403、Scheduler 回 200；真實 LINE 訊息回覆正常，
+      webhook 延遲 6.3–6.5 秒（舊版約 3.5–9 秒），也沒有 `register_user failed` log
 
 ## Review（agy，claude-opus-5-5-high）
 
