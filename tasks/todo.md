@@ -134,7 +134,7 @@ Google Calendar 查詢也成功，只差把結果送回 LINE。
 - [x] agy review 指出：低信心路徑 `message.py` 直接回 `clarification_needed`，沒經過 80 字截斷
 - [x] 截斷改在 `CalendarIntent` 的 `field_validator`，`_with_assumption_note` 不再自己截
 - [x] 測試：低信心路徑的截斷（75 passed）
-- [ ] 部署
+- [x] 部署（revision 00058，health check 200）
 
 ## Review（agy，gemini-4-argon-high）
 
