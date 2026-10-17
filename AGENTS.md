@@ -73,4 +73,4 @@ system/calendar_sync                 同步狀態
 ## 測試
 
 - 測試不得連外（Firestore / Gemini / LINE / Calendar），一律 mock；外部依賴用 `unittest.mock.AsyncMock`，環境變數用 `os.environ.setdefault` 注入。
-- Production 驗證用簽章模擬 webhook，不要透過使用者的 LINE app。
+- Production 驗證用簽章模擬 webhook，不要透過使用者的 LINE app：`uv run python scripts/sim_webhook.py "說明"`（結束前自動刪掉測試寫入的 Firestore doc；只送唯讀指令）。
