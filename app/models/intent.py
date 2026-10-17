@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+NOTE_MAX_LEN = 80  # clarification_needed 上限，prompt 要求 40 字，留一倍緩衝
 
 
 class ActionType(str, Enum):
@@ -88,3 +91,11 @@ class CalendarIntent(CalendarIntentPayload):
     - 模型在推定不明確資訊後會設 0.7+，並在 clarification_needed 說明推定內容
     """
     original_message: str | None = None        # 保留原始訊息，供 update 二次精細解析用
+
+    @field_validator("clarification_needed")
+    @classmethod
+    def _truncate_note(cls, v: str | None) -> str | None:
+        # 模型偶爾會陷入重複輸出，在這裡硬性截斷，所有讀取端（推定說明、低信心澄清）都受保護
+        if v and len(v) > NOTE_MAX_LEN:
+            return v[:NOTE_MAX_LEN] + "…"
+        return v

@@ -128,3 +128,15 @@ Google Calendar 查詢也成功，只差把結果送回 LINE。
 - 不採用：log 裡的 LINE user ID — 跟其他地方的 log 慣例一致，要改就一次改全部
 - 不採用：非 ASCII 的 secret 會永遠比對失敗 — secret 是 ASCII，就算不是也是拒絕請求，不會誤放行
 - 不採用：測試 mock 可能 await 不到 — 實際跑過有通過
+
+# clarification_needed 截斷移到 model 層（2026-10-17）
+
+- [x] agy review 指出：低信心路徑 `message.py` 直接回 `clarification_needed`，沒經過 80 字截斷
+- [x] 截斷改在 `CalendarIntent` 的 `field_validator`，`_with_assumption_note` 不再自己截
+- [x] 測試：低信心路徑的截斷（75 passed）
+- [ ] 部署
+
+## Review（agy，gemini-4-argon-high）
+
+- 採用：AGENTS.md 還寫舊的 `_with_assumption_note` 截斷 → 已更新
+- 不採用：validator 移到 `CalendarIntentPayload` — Payload 只在 `nlp.py` 當 response_schema 用，解析後立刻轉成 `CalendarIntent`，沒有別的讀取端

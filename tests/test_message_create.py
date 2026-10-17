@@ -10,8 +10,8 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
-from app.handlers.message import _NOTE_MAX_LEN, _handle_create, _with_assumption_note
-from app.models.intent import ActionType, CalendarIntent, EventDetails
+from app.handlers.message import _handle_create, _with_assumption_note
+from app.models.intent import NOTE_MAX_LEN, ActionType, CalendarIntent, EventDetails
 
 
 def _event(summary: str) -> dict:
@@ -63,4 +63,10 @@ async def test_create_multiple_events_partial_failure():
 def test_assumption_note_truncates_runaway_output():
     intent = CalendarIntent(action=ActionType.CREATE, clarification_needed="推定為明天～！" * 50)
     note = _with_assumption_note("ok", intent).split("💡 ")[1]
-    assert len(note) == _NOTE_MAX_LEN + 1 and note.endswith("…")
+    assert len(note) == NOTE_MAX_LEN + 1 and note.endswith("…")
+
+
+def test_low_confidence_clarification_is_truncated():
+    # 低信心路徑直接讀 clarification_needed，不經 _with_assumption_note
+    intent = CalendarIntent(action=ActionType.UNKNOWN, clarification_needed="請問是哪天？" * 50)
+    assert len(intent.clarification_needed) == NOTE_MAX_LEN + 1

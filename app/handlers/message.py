@@ -26,9 +26,6 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-_NOTE_MAX_LEN = 80
-
-
 def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
     """在回覆訊息末尾附加模型的推定說明（若有）。
 
@@ -39,10 +36,7 @@ def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
     - 使用 💡 圖示視覺區隔推定說明與主要回覆
     """
     note = intent.clarification_needed
-    if note:
-        # 模型偶爾會陷入重複輸出，硬性截斷避免洗版
-        if len(note) > _NOTE_MAX_LEN:
-            note = note[:_NOTE_MAX_LEN] + "…"
+    if note:  # 長度已在 CalendarIntent validator 截斷
         return msg + f"\n\n💡 {note}"
     return msg
 
