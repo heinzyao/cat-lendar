@@ -47,8 +47,8 @@ sig = base64.b64encode(hmac.new(secret, body, hashlib.sha256).digest()).decode()
 db = firestore.Client(project=PROJECT)
 try:
     req = urllib.request.Request(url, body, {"Content-Type": "application/json", "X-Line-Signature": sig})
+    # webhook 會 await handle_message 跑完才回 200，回應時 Firestore 已寫完，不用等
     print("webhook:", urllib.request.urlopen(req, timeout=60).status)
-    time.sleep(8)  # ponytail: webhook 回 200 後背景還在跑，固定等；不夠就加長
     for c in COLLECTIONS:
         d = db.collection(c).document(uid).get()
         if d.exists:
