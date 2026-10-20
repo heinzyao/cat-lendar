@@ -49,7 +49,7 @@ system/calendar_sync                 同步狀態
 ```
 
 - TTL 要在 GCP 端設 TTL policy，程式不會自己清。
-- `UserState.action` 只有 `select_event_for_update`、`select_event_for_delete`。
+- `UserState.action` 只有 `select_event_for_update`、`select_event_for_delete`、`select_event_for_reminder`；選完後的動作由後綴決定（`removeprefix`），不要互相借用。
 - GCP 上還有 `oauth_states` collection 與其 TTL policy：OAuth 時代的殘留，程式已不用，看到不是 bug。
 
 ## 行為契約（改動時要保持）

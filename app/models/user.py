@@ -14,7 +14,7 @@ class UserState(BaseModel):
     只在 update/delete 找到多筆符合行程時建立，操作完成後立即刪除。
     """
     line_user_id: str           # LINE 用戶 ID，同時也是 Firestore 文件 ID
-    action: str                 # "select_event_for_update" | "select_event_for_delete"
+    action: str                 # "select_event_for_update" | "select_event_for_delete" | "select_event_for_reminder"
     candidates: list[dict] = [] # 符合條件的行程候選列表（含 id, summary, start, end）
     original_intent: dict = {}  # 原始 CalendarIntent.model_dump()，選擇後重新執行用
     expires_at: datetime        # 狀態過期時間（設定於 config.user_state_ttl_seconds）

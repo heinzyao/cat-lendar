@@ -101,6 +101,7 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
     if user_state and user_state.action in (
         "select_event_for_update",
         "select_event_for_delete",
+        "select_event_for_reminder",
     ):
         reply_msg = await _handle_selection(user_id, reply_token, text, user_state, credentials)
         if reply_msg:
@@ -477,9 +478,13 @@ async def _handle_selection(
 
     await store.delete_user_state(user_id)
 
-    action = "update" if user_state.action == "select_event_for_update" else "delete"
+    action = user_state.action.removeprefix("select_event_for_")
     try:
         intent = CalendarIntent.model_validate(user_state.original_intent)
+        if action == "reminder":
+            return await _reply_reminders(
+                user_id, reply_token, [candidates[i] for i in choices], intent
+            )
         whole = EventTarget(event_details=intent.event_details, instruction=intent.original_message)
         # 多 target 的候選各自帶 target；舊格式（或單一 target）退回整則訊息
         jobs = [
@@ -612,17 +617,40 @@ async def _handle_set_reminder(
         return reply_msg
 
     if len(events) > 1:
-        await _save_selection_state(user_id, "select_event_for_update", events, intent)
+        # 不能借用 select_event_for_update：選完會走修改流程，提醒根本沒設上
+        await _save_selection_state(user_id, "select_event_for_reminder", events, intent)
         return await _reply_selection(reply_token, events)
 
-    event = events[0]
-    event_id = event["id"]
-
     try:
-        start_time = datetime.fromisoformat(event_time(event, "start"))
-    except (ValueError, TypeError):
+        return await _reply_reminders(user_id, reply_token, events, intent)
+    except ValueError:  # 行程開始時間解析不了
         await line_messaging.reply_text(reply_token, i18n.CALENDAR_ERROR)
         return i18n.CALENDAR_ERROR
+
+
+async def _reply_reminders(
+    user_id: str, reply_token: str, events: list[dict], intent: CalendarIntent
+) -> str:
+    """對選定的行程逐一設提醒並回覆；多筆時每段前面標行程名稱，才分得出是哪個。"""
+    minutes = intent.event_details.reminder_minutes
+    blocks = []
+    for event in events:
+        msg = await _set_reminder_on(user_id, event, minutes)
+        if len(events) > 1:
+            msg = f"📌 {event.get('summary', '(無標題)')}\n{msg}"
+        blocks.append(msg)
+    reply_msg = _with_assumption_note("\n\n".join(blocks), intent)
+    await line_messaging.reply_text(reply_token, reply_msg)
+    return reply_msg
+
+
+async def _set_reminder_on(user_id: str, event: dict, reminder_minutes: int) -> str:
+    """建立或更新單一行程的 Firestore 提醒，回傳該筆的回覆文字。開始時間無效時 raise ValueError。"""
+    event_id = event["id"]
+    try:
+        start_time = datetime.fromisoformat(event_time(event, "start"))
+    except TypeError as e:
+        raise ValueError(f"bad start time for {event_id}") from e
 
     reminder_at = start_time.astimezone(timezone.utc) - timedelta(minutes=reminder_minutes)
 
@@ -634,13 +662,8 @@ async def _handle_set_reminder(
             "event_summary": event.get("summary", ""),
             "sent": False,
         })
-        msg = i18n.REMINDER_UPDATED.format(minutes=reminder_minutes)
-    else:
-        await store.create_reminder(
-            user_id, event_id, event.get("summary", ""), start_time, reminder_minutes
-        )
-        msg = i18n.REMINDER_SET.format(minutes=reminder_minutes)
-
-    reply_msg = _with_assumption_note(msg, intent)
-    await line_messaging.reply_text(reply_token, reply_msg)
-    return reply_msg
+        return i18n.REMINDER_UPDATED.format(minutes=reminder_minutes)
+    await store.create_reminder(
+        user_id, event_id, event.get("summary", ""), start_time, reminder_minutes
+    )
+    return i18n.REMINDER_SET.format(minutes=reminder_minutes)

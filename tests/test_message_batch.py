@@ -156,3 +156,37 @@ async def test_overlapping_targets_delete_once():
         await _handle_delete(_USER, "tok", intent, _CREDS)
 
     cal.delete_event.assert_awaited_once()
+
+
+async def test_set_reminder_selection_sets_reminder_not_update():
+    """設提醒找到多筆 → 選編號後要真的建提醒，不能走修改流程（舊 bug）。"""
+    from app.handlers.message import _handle_set_reminder
+
+    events = [_ev(1, "開會"), _ev(2, "開會")]
+    intent = CalendarIntent(
+        action=ActionType.SET_REMINDER, confidence=0.9, search_keyword="開會",
+        event_details=EventDetails(reminder_minutes=30),
+    )
+    p = _patches()
+    with p[0] as cal, p[1], p[2] as msg, p[3], p[4] as store:
+        cal.query_events = AsyncMock(return_value=events)
+        msg.reply_text = AsyncMock()
+        store.save_user_state = AsyncMock()
+        await _handle_set_reminder(_USER, "tok", intent, _CREDS)
+        state: UserState = store.save_user_state.await_args.args[0]
+
+    assert state.action == "select_event_for_reminder"
+
+    p = _patches()
+    with p[0] as cal, p[1], p[2] as msg, p[3], p[4] as store:
+        store.delete_user_state = AsyncMock()
+        store.get_reminder_by_event = AsyncMock(return_value=None)
+        store.create_reminder = AsyncMock()
+        cal.update_event = AsyncMock()
+        msg.reply_text = AsyncMock()
+        reply = await _handle_selection(_USER, "tok", "1 2", state, _CREDS)
+
+    cal.update_event.assert_not_awaited()
+    assert [c.args[1] for c in store.create_reminder.await_args_list] == ["e1", "e2"]
+    assert all(c.args[4] == 30 for c in store.create_reminder.await_args_list)
+    assert reply.count("📌 開會") == 2
