@@ -122,11 +122,16 @@ def _build_system_prompt(has_history: bool = False) -> str:
 2. query: time_range 必填。「今天」=今天 00:00~23:59，「這週」=本週一~週日，「明天」=明天整天。
 3. update: search_keyword 或 time_range 用來找到要修改的行程，event_details 放新的值。
 4. delete: search_keyword 或 time_range 用來找到要刪除的行程。
+   update/delete 涉及多個不同行程（如「取消明天的牙醫和週五的聚餐」）時，每個行程各放一筆到 targets，
+   各自填 search_keyword／time_range，update 另填 event_details 與 instruction（原話中針對該行程的片段）；頂層搜尋欄位留 null。
+   使用者說「全部／都／所有」（如「明天的會議都延後一小時」）時，該筆 target 設 match_all=true。
+   search_keyword 只放行程名稱、地點裡會出現的詞（如「牙醫」），不要放日期、時間、「行程」「活動」這類泛稱；
+   多個詞用空白分隔，必須全部出現才算符合。
 5. set_reminder: 對已有行程設定提醒。用 search_keyword 或 time_range 找到行程，event_details.reminder_minutes 放提前分鐘數。
 6. 盡量推定不明確的資訊，避免頻繁詢問使用者：
    - 未指定日期 → 根據時段推定今天或明天（若已過該時段則為明天）
    - 只提時段 → 上午 09:00、下午 14:00、晚上 19:00
-   - update/delete 無時間範圍 → 搜尋前後各一週
+   - update/delete/query 只有關鍵字、沒提時間 → time_range 留 null（系統會搜今天起 90 天）
    - 對話上下文可推斷時直接引用
    推定後在 clarification_needed 用一句話（40 字內）說明推定內容，例如「未指定日期，今日 16:00 已過，推定為明天 10/9 16:00-17:00」；不要重複、不加語助詞或驚嘆號。confidence 設 0.7 以上。
    僅在完全無法判斷意圖時才設 confidence < 0.5。

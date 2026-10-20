@@ -78,7 +78,7 @@ async def test_handle_update_single_event_uses_parse_update_details():
         await _handle_update(_USER, _REPLY_TOKEN, intent, _MOCK_CREDS)
 
         mock_nlp.parse_update_details.assert_awaited_once_with(
-            intent.original_message, _SAMPLE_EVENT, user_id=_USER
+            intent.original_message, _SAMPLE_EVENT
         )
         mock_cal.update_event.assert_awaited_once_with(
             _MOCK_CREDS, "evt001", refined, line_user_id=_USER
@@ -153,7 +153,7 @@ async def test_handle_selection_update_uses_parse_update_details():
         await _handle_selection(_USER, _REPLY_TOKEN, "1", user_state, _MOCK_CREDS)
 
         mock_nlp.parse_update_details.assert_awaited_once_with(
-            intent.original_message, selected, user_id=_USER
+            intent.original_message, selected
         )
         mock_cal.update_event.assert_awaited_once_with(
             _MOCK_CREDS, "evt001", refined, line_user_id=_USER

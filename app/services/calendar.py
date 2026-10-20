@@ -134,21 +134,36 @@ async def query_events(
     keyword: str | None = None,
     max_results: int = 20,
 ) -> list[dict[str, Any]]:
+    """查詢時間範圍內的行程；有 keyword 時在本地做子字串比對。
+
+    不用 API 的 `q`：它是斷詞全文搜尋，中文子字串（「牙醫」對「看牙醫」）常常漏抓。
+    改抓整段範圍（一頁 250 筆）再本地篩，空白分隔的多個詞要全部命中。
+    """
+    keyword = keyword.strip() if keyword else None  # 純空白 split 後是空集合，all([]) 會全中
     service = _get_service(credentials)
 
     params = {
         "calendarId": settings.google_calendar_id,
         "timeMin": to_rfc3339(time_range.start),
         "timeMax": to_rfc3339(time_range.end),
-        "maxResults": max_results,
+        # ponytail: 只抓一頁，範圍內超過 250 筆會漏；真的遇到再翻頁
+        "maxResults": 250 if keyword else max_results,
         "singleEvents": True,
         "orderBy": "startTime",
     }
-    if keyword:
-        params["q"] = keyword
 
     result = await _execute(service.events().list(**params))
-    return result.get("items", [])
+    items = result.get("items", [])
+    if keyword:
+        items = [e for e in items if matches_keyword(e, keyword)][:max_results]
+    return items
+
+
+def matches_keyword(event: dict[str, Any], keyword: str) -> bool:
+    # 去掉 [LINE: ...] 操作者標記，否則搜「LINE」「U」之類會命中所有行程
+    desc = re.sub(r"\[LINE: [^\]]+\]", "", event.get("description") or "")
+    text = " ".join((event.get("summary") or "", event.get("location") or "", desc)).casefold()
+    return all(term in text for term in keyword.casefold().split())
 
 
 async def update_event(

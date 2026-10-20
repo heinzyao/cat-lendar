@@ -57,6 +57,8 @@ system/calendar_sync                 同步狀態
 - **一次新增多筆**：`CalendarIntentPayload.events` 有值時優先於 `event_details`。單筆失敗只標 ❌（`i18n.EVENT_CREATE_FAILED`），不中斷其餘；只有一筆時才照舊 raise。前幾筆已寫進日曆，整批回錯會讓使用者重送而重複建立。
 - **跨用戶通知在 reply 之後發**，避免拖到 reply token 過期；要 await 完成，不可丟到背景（Cloud Run 回應後會節流 CPU）。
 - **💡 推定說明**：Gemini 曾在這個自由文字欄位失控重複洗版。prompt 限 40 字之外，`CalendarIntent` 的 validator 以 `NOTE_MAX_LEN`（80）截斷，推定說明與低信心澄清兩條路徑都受保護——不要拿掉程式端截斷。
+- **一次修改／取消多筆**：`CalendarIntentPayload.targets` 有值時優先於頂層搜尋欄位；單筆訊息也包成一個 target 走 `_handle_targets`。明確的直接並行執行（上限 4），模糊的列選單（可回「1 3」「全部」）。同一 target 套到多筆（match_all／複選）時二次解析失敗就標 ❌、不 fallback。二次解析不計使用者頻率限制。
+- **關鍵字搜尋在本地比對**：`query_events` 有 keyword 時不用 API `q`（中文子字串會漏），抓一頁 250 筆後子字串篩、多詞全中、忽略 `[LINE: ...]`；只給關鍵字時範圍是今天起 90 天。
 - `parse_update_details` 失敗時 fallback 到 `intent.event_details`；選擇暫存的 candidates 要帶 end/location/description，二次解析才算得出持續時間。
 - 新增的日曆事件 description 會附加操作者 `[LINE: {user_id}]`。
 

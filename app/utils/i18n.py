@@ -6,14 +6,17 @@ EVENT_CREATE_FAILED = "❌『{summary}』沒記成功，請再傳一次這個行
 EVENT_CREATED_WITH_LOCATION = "幫你記到日曆上囉！📝\n📌 {summary}\n🕐 {time}\n📍 {location}"
 EVENT_DELETED = "沒問題，已經把『{summary}』從日曆刪除囉！🗑️"
 EVENT_UPDATED = "好喔，幫你把行程更新成這樣：\n📌 {summary}\n🕐 {time}"
+EVENT_UPDATE_FAILED = "❌『{summary}』沒改成功，請再傳一次。"
+EVENT_DELETE_FAILED = "❌『{summary}』沒刪成功，請再傳一次。"
+TARGET_NOT_FOUND = "🤔 找不到「{keyword}」相關的行程。"
 NO_EVENTS_FOUND = "我翻了一下日曆，這段時間好像沒有行程耶。🤔"
 
 EVENTS_LIST_HEADER = "幫你查了一下日曆，有這些安排 📅：\n"
 EVENT_LIST_ITEM = "{index}. {summary}\n   🕐 {time}\n"
 
 # Disambiguation
-MULTIPLE_EVENTS_FOUND = "哎呀，日曆上剛好有幾個很像的行程，你指的是哪一個呢？（請回覆編號）\n"
-SELECT_PROMPT = "\n請回覆數字（如：1）"
+MULTIPLE_EVENTS_FOUND = "哎呀，日曆上剛好有幾個很像的行程，你指的是哪些呢？（請回覆編號）\n"
+SELECT_PROMPT = "\n請回覆數字（如：1，或 1 3 複選，或「全部」）"
 
 # Errors
 CLARIFICATION_NEEDED = "嗯... 我有點不太懂 🤔\n{message}"
@@ -52,7 +55,9 @@ HELP_MESSAGE = (
     "・『把明天的開會改到後天下午 3 點』\n"
     "・『把下午 2 點的行程改名為客戶簡報』\n\n"
     "🗑️ 取消計畫\n"
-    "・『幫我取消明天的會議』\n\n"
+    "・『幫我取消明天的會議』\n"
+    "・『取消週三的牙醫和週五的聚餐』（一次取消好幾個）\n"
+    "・『明天的會議都延後一小時』\n\n"
     "⏰ 貼心提醒\n"
     "・『幫明天的開會設定 30 分鐘前提醒』\n"
     "・『設定預設提醒 30 分鐘前』（以後每個新行程都會自動設好）\n"

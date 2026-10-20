@@ -54,6 +54,19 @@ class TimeRange(BaseModel):
     end: datetime    # 查詢結束時間（含）
 
 
+class EventTarget(BaseModel):
+    """update/delete 一次處理多個行程時，每個要找的行程一筆。"""
+    search_keyword: str | None = None
+    time_range: TimeRange | None = None
+    event_details: EventDetails | None = None  # update 的新值（二次解析失敗時的 fallback）
+    instruction: str | None = Field(
+        default=None, description="原話中針對這個行程的片段，例如「牙醫改到下午 3 點」"
+    )                                          # 給 parse_update_details 精算用
+    match_all: bool = Field(
+        default=False, description="使用者說「全部／都／所有」時為 true，套用到所有符合的行程"
+    )
+
+
 class CalendarIntentPayload(BaseModel):
     """Gemini 實際回傳的欄位——即 `response_schema` 的形狀。
 
@@ -66,6 +79,9 @@ class CalendarIntentPayload(BaseModel):
     events: list[EventDetails] | None = Field(
         default=None, description="create 一次新增多個行程時，每個行程一筆"
     )                                          # 多筆新增；有值時優先於 event_details
+    targets: list[EventTarget] | None = Field(
+        default=None, description="update/delete 涉及多個行程、或要套用到全部符合行程時使用"
+    )                                          # 多筆修改／取消；有值時優先於頂層搜尋欄位
     time_range: TimeRange | None = None        # 搜尋時間範圍（query/update/delete 用）
     search_keyword: str | None = Field(
         default=None, description="用於查詢/修改/刪除時的關鍵字"

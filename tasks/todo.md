@@ -1,3 +1,27 @@
+# 一次修改／取消多個行程 + 關鍵字搜尋改本地比對
+
+## Checklist
+
+- [x] 1. `EventTarget` + `CalendarIntentPayload.targets`：每個要找的行程一筆（keyword／time_range／event_details／instruction／match_all）
+- [x] 2. `_handle_update`／`_handle_delete` 合併為 `_handle_targets`：單筆訊息也包成一個 target，回覆格式不變
+- [x] 3. 明確的（唯一或 match_all）並行執行；單筆失敗標 ❌ 不中斷，只有一筆時 raise
+- [x] 4. 模糊的列選單，可回「1 3」「1、3」「全部」複選；候選帶 target 以使用對應 instruction
+- [x] 5. `query_events` 有 keyword 時不用 API `q`（斷詞搜尋，中文子字串會漏），抓 250 筆本地子字串比對；忽略 `[LINE: ...]`
+- [x] 6. 只有關鍵字時搜尋範圍 ±7 天 → 過去 30 天～未來 90 天
+- [x] 7. prompt：targets／match_all 規則、search_keyword 只放名稱詞
+- [x] 8. 測試 82 passed；Opus 第二次 review 已處理（見下）
+- [ ] 9. 真實 Gemini 驗 targets schema 與多目標解析（本機 .env 的 key 已失效、讀 production secret 被擋，未驗）
+- [ ] 10. 部署
+
+## Review
+
+- `parse_update_details` 不再帶 user_id：觸發訊息已計過頻率，批次內每筆再計會把 10 筆以上的「都延後」自己擋掉。
+- Opus review 採納：關鍵字範圍不往回搜（改今天起 90 天，免得「都取消」刪到已結束的）；同一 target 套多筆時二次解析失敗不 fallback（否則「延後一小時」全變同一時間）；跨 target 以 event id 去重；並行上限 4；純空白關鍵字會全中 → strip；多 target 時單筆失敗不 raise。
+- Opus review 不採納：httplib2 共用（`_get_service` 每次 build 新的）；每筆一則跨用戶通知（與多筆新增既有行為一致）；大量刪除二次確認（使用者明說「全部／都」才會 match_all，待實際使用再評估）。
+- 已知限制：關鍵字搜尋只抓一頁 250 筆；set_reminder 多筆選擇仍沿用 select_event_for_update（既有行為，未動）。
+
+---
+
 # 遷移 NLP 至 google-genai SDK
 
 `google-generativeai` 已被 Google 標記停止支援（import 時噴 FutureWarning），
