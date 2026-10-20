@@ -126,7 +126,7 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
     # 只記結構不記原話：查「Gemini 有沒有拆成多個 target」用
     logger.info(
         "intent user=…%s action=%s conf=%.2f keyword=%r events=%d targets=%s",
-        user_id[-4:], intent.action.value, intent.confidence, intent.search_keyword,
+        user_id[-4:], getattr(intent.action, "value", intent.action), intent.confidence, intent.search_keyword,
         len(intent.events or []),
         [(t.search_keyword, t.match_all) for t in intent.targets or []],
     )
