@@ -123,6 +123,14 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await line_messaging.reply_text(reply_token, i18n.PARSE_ERROR)
         return
 
+    # 只記結構不記原話：查「Gemini 有沒有拆成多個 target」用
+    logger.info(
+        "intent user=…%s action=%s conf=%.2f keyword=%r events=%d targets=%s",
+        user_id[-4:], intent.action.value, intent.confidence, intent.search_keyword,
+        len(intent.events or []),
+        [(t.search_keyword, t.match_all) for t in intent.targets or []],
+    )
+
     # confidence < 0.5 表示模型無法判斷意圖，向使用者要求澄清
     # 設計理由：低信心直接執行可能導致誤操作行程，寧可多問一次
     if intent.confidence < 0.5:
@@ -258,6 +266,7 @@ async def _handle_query(
     events = await calendar.query_events(
         credentials, time_range, keyword=intent.search_keyword
     )
+    logger.info("query keyword=%r matched=%d", intent.search_keyword, len(events))
 
     if not events:
         reply_msg = _with_assumption_note(i18n.NO_EVENTS_FOUND, intent)
@@ -319,10 +328,12 @@ async def _handle_targets(
     blocks: list[str] = []
     jobs: list[tuple[dict, EventTarget]] = []
     ambiguous: list[tuple[dict, EventTarget]] = []
+    found: list[tuple[EventTarget, int]] = []  # 供 log
     seen: set[str] = set()  # 不同 target 命中同一筆時只處理一次（重複刪會回 404）
     for t in targets:
         events = [e for e in await _find_matching_events(t, credentials) if e["id"] not in seen]
         seen.update(e["id"] for e in events)
+        found.append((t, len(events)))
         if not events:
             blocks.append(
                 i18n.NO_EVENTS_FOUND if len(targets) == 1
@@ -333,6 +344,10 @@ async def _handle_targets(
         else:
             ambiguous += [(e, t) for e in events]
 
+    logger.info(
+        "targets action=%s matched=%s jobs=%d ambiguous=%d",
+        action, [(t.search_keyword, n) for t, n in found], len(jobs), len(ambiguous),
+    )
     done_blocks, notices = await _apply_jobs(
         user_id, action, jobs, credentials, strict=len(targets) == 1
     )
