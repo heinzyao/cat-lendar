@@ -45,7 +45,9 @@ def _with_assumption_note(msg: str, intent: CalendarIntent) -> str:
 # ── Main entry point ──
 
 
-async def handle_message(user_id: str, reply_token: str, text: str) -> None:
+async def handle_message(
+    user_id: str, reply_token: str, text: str, *, one_on_one: bool = True
+) -> None:
     """LINE 訊息處理協調器：主要進入點。
 
     處理順序（優先級由高至低）：
@@ -90,6 +92,11 @@ async def handle_message(user_id: str, reply_token: str, text: str) -> None:
         await store.set_notify_enabled(user_id, True)
         await line_messaging.reply_text(reply_token, i18n.NOTIFY_ENABLED)
         return
+
+    # 以下路徑會呼叫 Gemini／Calendar（4～13 秒），先顯示「輸入中」；固定指令很快，不需要。
+    # 只在一對一聊天顯示：群組訊息用 user_id 呼叫會讓動畫跑到該使用者的私訊
+    if one_on_one:
+        await line_messaging.show_loading(user_id)
 
     # 取得 Service Account 共享憑證（所有使用者共用同一 Service Account 的日曆存取權）
     credentials = auth.get_shared_credentials()

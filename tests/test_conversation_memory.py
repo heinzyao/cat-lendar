@@ -353,6 +353,7 @@ async def test_handle_message_loads_and_saves_conversation():
         )
 
         mock_line.reply_text = AsyncMock()
+        mock_line.show_loading = AsyncMock()
         mock_calendar.query_events = AsyncMock(return_value=[])
 
         from app.handlers.message import handle_message
@@ -397,6 +398,7 @@ async def test_handle_message_saves_conversation_on_clarification():
             )
         )
         mock_line.reply_text = AsyncMock()
+        mock_line.show_loading = AsyncMock()
 
         from app.handlers.message import handle_message
 
@@ -414,6 +416,7 @@ async def test_handle_message_register_user_failure_does_not_block_reply():
     ):
         mock_store.register_user = AsyncMock(side_effect=RuntimeError("firestore down"))
         mock_line.reply_text = AsyncMock()
+        mock_line.show_loading = AsyncMock()
 
         from app.handlers.message import handle_message
 

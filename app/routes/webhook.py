@@ -59,7 +59,9 @@ async def webhook(
             # 每個事件獨立 try/except：單一失敗不影響其他事件
             try:
                 async with asyncio.timeout_at(deadline):
-                    await handle_message(user_id, reply_token, text)
+                    await handle_message(
+                        user_id, reply_token, text, one_on_one=event.source.type == "user"
+                    )
             except TimeoutError:
                 logger.error("handle_message exceeded %ss deadline for %s", HANDLE_DEADLINE_SEC, user_id)
                 try:

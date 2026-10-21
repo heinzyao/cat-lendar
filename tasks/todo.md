@@ -1,3 +1,22 @@
+# 回覆變快：「輸入中」動畫＋Gemini 設定評估
+
+webhook 過去兩週 p50 6.3 s、p90 20.5 s；單次 parse_intent 4–13 s。使用者等待時看不到任何回饋。
+
+## Checklist
+
+- [x] 1. `line_messaging.show_loading()`：一對一聊天顯示「輸入中」（25 秒，回覆送出即消失）；失敗／超過 2 秒只記 log
+- [x] 2. `handle_message` 在固定指令之後、選擇狀態機與 NLP 之前呼叫；固定指令（說明、通知開關等）不顯示
+- [x] 3. 測試 `tests/test_loading_animation.py`；既有 conversation_memory 測試補 `show_loading` mock；92 passed
+- [x] 4. 真實 Gemini 比較（15 題解析＋3 題時間精算 × 3 輪）：3.8-flash 現行 50/54、p50 6.1 s／p90 9.3 s；3.8-flash thinking=LOW 51/54、3.4／5.4 s（Gemini 端 504 兩次）；3.5-flash-lite 51/54、1.4／1.7 s（錯的都是「改到後天同一時間」把後天算成相對原行程）；thinking=MINIMAL 不支援。**換不換模型待 Henry 決定**，這次只上動畫
+- [x] 5. Opus review（無阻擋問題）；94 passed
+- [ ] 6. 部署並驗證
+
+## Review
+
+- Opus 採納：SDK 沒有 HTTP 逾時、`to_thread` 的執行緒取消不掉 → 請求加 `_request_timeout=2`；群組訊息用 user_id 呼叫會讓動畫跑到私訊 → `handle_message(one_on_one=...)` 由 webhook 依 `event.source.type == "user"` 判斷（原 docstring 說「群組會被拒絕」是錯的）；ApiClient 改用 `with` 關閉。
+- Opus 部分採納：show_loading 串行吃 25 秒總時限——LINE 正常 0.1–0.3 s、最壞 2 s，保持串行換取簡單。
+- Opus 不採納：新測試檔單獨跑會 import 失敗——`tests/conftest.py` 一定會載入並補環境變數。
+
 # 外部 API 逾時短於 Cloud Run 30 秒上限
 
 過去兩週 9 次請求被 Cloud Run 30 秒上限切斷（504）：/internal/sync 6 次、/webhook 4 次。sync 平常 p50 0.53 s／p99 1.05 s，
