@@ -141,7 +141,7 @@ async def bench(spec: str, reps: int) -> None:
         t = time.monotonic()
         try:
             return await coro
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — 比較腳本要記錄任何 API 錯誤並繼續
             errs += 1
             wrong.add(f"{label}（{type(e).__name__}）")
             return None
