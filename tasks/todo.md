@@ -11,7 +11,7 @@
 - [x] 7. prompt：targets／match_all 規則、search_keyword 只放名稱詞
 - [x] 8. 測試 82 passed；Opus 第二次 review 已處理（見下）
 - [ ] 9. 真實 Gemini 驗 targets schema 與多目標解析（本機 .env 的 key 已失效、讀 production secret 被擋，未驗）
-- [ ] 10. 部署
+- [x] 10. 部署（2026-10-21 已部署 badd250，模擬 webhook＋結構 log 驗過；之後的提醒修正 37646dd 也已上線）
 
 ## Review
 
