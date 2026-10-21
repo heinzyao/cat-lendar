@@ -22,6 +22,8 @@ SELECT_PROMPT = "\n請回覆數字（如：1，或 1 3 複選，或「全部」�
 CLARIFICATION_NEEDED = "嗯... 我有點不太懂 🤔\n{message}"
 PARSE_ERROR = "不好意思，我聽不太懂這個指令 😅\n你可以隨性一點說，例如：\n• 幫我記下明天下午三點要開會\n• 這週有什麼安排嗎？\n• 幫我取消明天的晚餐"
 CALENDAR_ERROR = "操作行事曆時發生錯誤，請稍後再試。"
+# 逾時可能發生在寫入日曆之後；叫使用者直接重試會重複建立，所以先請他查詢
+TIMEOUT_ERROR = "處理太久，我先停下來了 🙏\n如果剛才是新增、修改或取消，可能已經完成，請先查一下行程再決定要不要重來。"
 
 # Cross-user notifications
 NOTIFY_EVENT_CREATED = "📅 {name} 在日曆上新增了活動呦：\n📌 {summary}\n🕐 {time}"

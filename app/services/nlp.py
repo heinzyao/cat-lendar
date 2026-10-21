@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 _client: genai.Client | None = None
 
+# google-genai 預設不設逾時；卡住時會撐到 Cloud Run 30 秒上限被切斷，
+# 連 PARSE_ERROR 都回不了。20 秒仍留餘裕給偶爾很慢但會成功的呼叫。
+GEMINI_TIMEOUT_MS = 20_000
+
 # 停用安全過濾：日曆指令不含有害內容，過濾會造成誤封
 _SAFETY_SETTINGS = [
     types.SafetySetting(category=c, threshold=types.HarmBlockThreshold.BLOCK_NONE)
@@ -39,7 +43,10 @@ def _get_client() -> genai.Client:
     """取得全局唯一的 genai Client（第一次呼叫時建立）。"""
     global _client
     if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
+        _client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+        )
     return _client
 
 

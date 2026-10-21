@@ -55,6 +55,7 @@ system/calendar_sync                 同步狀態
 ## 行為契約（改動時要保持）
 
 - **一次新增多筆**：`CalendarIntentPayload.events` 有值時優先於 `event_details`。單筆失敗只標 ❌（`i18n.EVENT_CREATE_FAILED`），不中斷其餘；只有一筆時才照舊 raise。前幾筆已寫進日曆，整批回錯會讓使用者重送而重複建立。
+- **逾時要短於 Cloud Run 的 30 秒上限**：Calendar API 單次 8 秒（`calendar.HTTP_TIMEOUT_SEC`，自帶 httplib2.Http，不加 num_retries 免得重複建立）、Gemini 單次 20 秒（`nlp.GEMINI_TIMEOUT_MS`），webhook 整體 25 秒（`webhook.HANDLE_DEADLINE_SEC`，逾時回 `TIMEOUT_ERROR` 請使用者先查再重試）、/internal/sync 整體 25 秒。新增外部呼叫要沿用；改 `deploy.sh --timeout` 時 `tests/test_timeouts.py` 會檢查。
 - **跨用戶通知在 reply 之後發**，避免拖到 reply token 過期；要 await 完成，不可丟到背景（Cloud Run 回應後會節流 CPU）。
 - **💡 推定說明**：Gemini 曾在這個自由文字欄位失控重複洗版。prompt 限 40 字之外，`CalendarIntent` 的 validator 以 `NOTE_MAX_LEN`（80）截斷，推定說明與低信心澄清兩條路徑都受保護——不要拿掉程式端截斷。
 - **一次修改／取消多筆**：`CalendarIntentPayload.targets` 有值時優先於頂層搜尋欄位；單筆訊息也包成一個 target 走 `_handle_targets`。明確的直接並行執行（上限 4），模糊的列選單（可回「1 3」「全部」）。同一 target 套到多筆（match_all／複選）時二次解析失敗就標 ❌、不 fallback。二次解析不計使用者頻率限制。

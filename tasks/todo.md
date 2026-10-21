@@ -1,3 +1,26 @@
+# 外部 API 逾時短於 Cloud Run 30 秒上限
+
+過去兩週 9 次請求被 Cloud Run 30 秒上限切斷（504）：/internal/sync 6 次、/webhook 4 次。sync 平常 p50 0.53 s／p99 1.05 s，
+卡住就是整整 30 s；webhook 55 次中 p50 6.3 s、6 次 >20 s。原因：googleapiclient 預設逾時 60 s、google-genai 預設不設逾時，
+連線卡住時撐到被切斷，使用者連 PARSE_ERROR 都收不到。
+
+## Checklist
+
+- [x] 1. Calendar API 自帶 `httplib2.Http(timeout=8)`（`calendar.HTTP_TIMEOUT_SEC`），維持不重試（POST 重試可能重複建立行程）
+- [x] 2. Gemini client 加 `HttpOptions(timeout=20_000)`（`nlp.GEMINI_TIMEOUT_MS`），逾時走既有的 PARSE_ERROR 回覆
+- [x] 3. `google-auth-httplib2`、`httplib2` 改列為直接依賴
+- [x] 4. 測試：`tests/test_timeouts.py`（逾時值 < deploy.sh 的 `--timeout`、不重試）；86 passed
+- [x] 5. 整個請求的總時限：webhook 所有 event 共用 25 秒（`webhook.HANDLE_DEADLINE_SEC`，逾時回 `i18n.TIMEOUT_ERROR`，請使用者先查詢再重試）；/internal/sync 25 秒（`notify.SYNC_DEADLINE_SEC`）逾時自己回 504 並留 log
+- [x] 6. Opus review 兩輪（第二輪：無阻擋問題）；89 passed
+- [ ] 7. 部署並驗證：/internal/sync 持續 200、模擬 webhook 查詢
+
+## Review
+
+- Opus 第一輪採納：單次逾時加總仍會超過 30 秒 → 加總時限（最關鍵）；httplib2 逾時是 socket 層級、token refresh 會疊加 → 由總時限兜住；「不重試」測試改名並註明 httplib2 底層仍可能重送一次；型別標註改 `google.auth.credentials.Credentials`。
+- Opus 第一輪不採納：「逾時例外可能沒被接住」——`handle_message` 對 NLP 與日曆操作都是 `except Exception`，逾時會回 PARSE_ERROR／CALENDAR_ERROR，已確認。
+- Opus 第二輪接受的取捨（不改）：期限若落在 reply 之後會中斷跨用戶通知；取消不會停掉 `to_thread` 裡的 Calendar 呼叫，可能留下「有行程、沒提醒」。改之前是被 Cloud Run 在 30 秒直接切斷，結果相同或更糟。
+- Opus 第二輪不成立：sync 504 被 Scheduler 立刻重跑而重疊——`sync-job` 未設 retryCount（預設 0）。
+
 # 一次修改／取消多個行程 + 關鍵字搜尋改本地比對
 
 ## Checklist

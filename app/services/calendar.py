@@ -12,7 +12,9 @@ import asyncio
 from datetime import timedelta
 from typing import Any
 
-from google.oauth2.credentials import Credentials
+import google_auth_httplib2
+import httplib2
+from google.auth.credentials import Credentials  # 基底類別：實際傳入的是 service_account.Credentials
 from googleapiclient.discovery import build
 
 from app.config import settings
@@ -22,6 +24,10 @@ from app.utils.datetime_utils import to_date_str, to_rfc3339
 
 logger = logging.getLogger(__name__)
 
+# googleapiclient 預設 60 秒，比 Cloud Run 的 30 秒請求上限還長：連線一卡住，
+# 請求會被 Cloud Run 直接切斷（504），使用者收不到任何回覆。
+HTTP_TIMEOUT_SEC = 8
+
 
 def _get_service(credentials: Credentials):
     """建立 Google Calendar API 服務物件。
@@ -29,8 +35,12 @@ def _get_service(credentials: Credentials):
     設計理由：
     - 每次呼叫建立新的 service 而非 Singleton，因為 credentials 可能會更新
     - googleapiclient.discovery.build 會快取 discovery document，實際開銷不大
+    - 自帶 httplib2.Http 才能設逾時（見 HTTP_TIMEOUT_SEC）
     """
-    return build("calendar", "v3", credentials=credentials)
+    http = google_auth_httplib2.AuthorizedHttp(
+        credentials, http=httplib2.Http(timeout=HTTP_TIMEOUT_SEC)
+    )
+    return build("calendar", "v3", http=http)
 
 
 async def _execute(request):
