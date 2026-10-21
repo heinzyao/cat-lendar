@@ -11,13 +11,23 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "x")
 os.environ.setdefault("GEMINI_API_KEY", "x")
 os.environ.setdefault("GOOGLE_CALENDAR_ID", "cal")
 
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from google.oauth2.credentials import Credentials
+from httpx import ASGITransport, AsyncClient
 
+from app.config import settings
+from app.main import app
+from app.routes import notify, webhook
 from app.services import calendar, nlp
+from app.utils import i18n
 
 CLOUD_RUN_TIMEOUT_SEC = int(
     re.search(r"--timeout=(\d+)", (Path(__file__).parents[1] / "scripts/deploy.sh").read_text()).group(1)
@@ -52,19 +62,6 @@ def test_gemini_client_timeout_below_cloud_run_limit():
 
 
 # ── 整個請求的總時限：單次逾時加總仍可能超過 30 秒（parse_intent → 搜尋 → 二次解析 → 寫入）──
-
-import asyncio
-import base64
-import hashlib
-import hmac
-import json
-
-from httpx import ASGITransport, AsyncClient
-
-from app.config import settings
-from app.main import app
-from app.routes import notify, webhook
-from app.utils import i18n
 
 
 def test_deadlines_leave_room_below_cloud_run_limit():

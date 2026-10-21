@@ -1,6 +1,6 @@
 """跨用戶行事曆異動通知測試"""
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

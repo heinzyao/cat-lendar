@@ -24,12 +24,12 @@ for _k, _v in {"LINE_CHANNEL_SECRET": "x", "LINE_CHANNEL_ACCESS_TOKEN": "x",
     os.environ.setdefault(_k, _v)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from google.genai import types
+from google.genai import types  # noqa: E402 — 需先設好環境變數與 sys.path
 
-from app.config import settings
-from app.models.user import ConversationMessage
-from app.services import nlp
-from app.utils.datetime_utils import now_local
+from app.config import settings  # noqa: E402 — 需先設好環境變數與 sys.path
+from app.models.user import ConversationMessage  # noqa: E402 — 需先設好環境變數與 sys.path
+from app.services import nlp  # noqa: E402 — 需先設好環境變數與 sys.path
+from app.utils.datetime_utils import now_local  # noqa: E402 — 需先設好環境變數與 sys.path
 
 NOW = now_local()
 TODAY = NOW.date()

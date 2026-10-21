@@ -1,3 +1,19 @@
+# 加上 ruff lint（照 music-collector）
+
+## Checklist
+
+- [x] 1. `pyproject.toml` 加 `[tool.ruff.lint]`，釘住 `select = ["E4", "E7", "E9", "F"]` 並註明原因（上游擴充預設規則會讓舊程式碼一夜變紅）
+- [x] 2. 修掉現有 20 個違規：F401 ×5（tests 裡沒用到的 import，`--fix` 移除）；E402 ×10（`tests/test_timeouts.py` 檔案中段的 import 移到開頭，仍在 `os.environ.setdefault` 之後）；E402 ×5（`scripts/bench_gemini.py` 需先設環境變數與 sys.path 才能 import → `# noqa: E402`）
+- [x] 3. `.github/workflows/test.yml` 測試前加 `uvx ruff check .`
+- [x] 4. AGENTS.md「指令」補 lint 指令
+- [x] 5. 驗證：`uvx ruff check .` All checks passed；99 passed
+
+## Review
+
+- Opus 採納：刪 `import pytest` 後留下的連續空行一併清掉。
+- Opus 不採納：ruff 版本沒釘（`uvx ruff@X.Y.Z` 或放進 dev 依賴）——照 music-collector 的做法刻意用 `uvx ruff`，規則集已釘；前綴 select 仍可能因上游在 F/E7 加規則而變紅，屆時再修或釘版本。
+- Opus 不採納：bench_gemini 的五個 noqa 改 per-file-ignores——per-file 會連帶放過該檔之後新增的 E402，逐行 noqa 範圍較小。
+
 # 換 gemini-3.5-flash-lite＋相對日期 prompt＋時區防線
 
 ## Checklist

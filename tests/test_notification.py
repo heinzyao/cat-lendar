@@ -3,8 +3,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 os.environ.setdefault("LINE_CHANNEL_SECRET", "test_secret_32bytes_padding_here!")
 os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
@@ -218,7 +216,6 @@ async def test_sync_update_resets_sent_when_start_changed():
 
 
 async def test_internal_notify_endpoint_forbidden():
-    import httpx
     from httpx import AsyncClient, ASGITransport
 
     os.environ["NOTIFY_SECRET"] = "test-secret-xyz"

@@ -11,7 +11,7 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
 from pydantic import ValidationError
-from app.models.intent import ActionType, CalendarIntent, EventDetails, TimeRange
+from app.models.intent import ActionType, CalendarIntent, EventDetails
 
 _TZ = ZoneInfo("Asia/Taipei")
 

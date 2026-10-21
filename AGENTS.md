@@ -6,6 +6,7 @@ LINE chatbot：用自然語言管理一份**共享**的 Google 日曆。所有 L
 
 ```bash
 uv run python -m pytest tests/ -q        # 測試；asyncio_mode=auto
+uvx ruff check .                          # lint；規則集釘在 pyproject.toml，CI 測試前也會跑
 ./scripts/dev.sh                          # 本地開發（uvicorn + ngrok）
 GOOGLE_CALENDAR_ID=<共享日曆 ID> ./scripts/deploy.sh   # 部署；此變數必填，未設會直接中止
 ```

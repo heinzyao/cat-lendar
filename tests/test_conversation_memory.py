@@ -4,8 +4,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 os.environ.setdefault("LINE_CHANNEL_SECRET", "test_secret_32bytes_padding_here!")
 os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")

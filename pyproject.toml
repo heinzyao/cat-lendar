@@ -23,6 +23,11 @@ dev = [
     "httpx>=0.28",
 ]
 
+[tool.ruff.lint]
+# 明確釘住規則集。CI 用 `uvx ruff` 會抓最新版，若繼承 ruff 當週的預設值，
+# 上游擴充預設規則就會讓沒動過的舊程式碼一夜變紅。
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
