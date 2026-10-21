@@ -13,6 +13,7 @@ from datetime import datetime
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 from app.config import settings
 from app.models.intent import CalendarIntent, CalendarIntentPayload, EventDetails
@@ -64,6 +65,32 @@ def _config(system_prompt: str, schema: type) -> types.GenerateContentConfig:
         response_schema=schema,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
+
+
+def _localize_times(obj: object) -> None:
+    """Gemini 輸出的時間一律視為本地時刻：非本地時區保留牆上時刻改標本地，naive 補本地。
+
+    實測 gemini-3.5-flash-lite 12 次出現 1 次把「10:00」標成 +00:00（47 次抽樣從未「正確換算成
+    UTC」），照單全收會差 8 小時。只套在 Gemini 回傳的物件上——程式內部建立的 model（例如由
+    Calendar API 資料建立）不經過這裡，不會被改寫。原地修改，遞迴處理巢狀 model 與 list。
+    """
+    if isinstance(obj, list):
+        for item in obj:
+            _localize_times(item)
+        return
+    if not isinstance(obj, BaseModel):
+        return
+    tz = local_tz()
+    for name in type(obj).model_fields:
+        value = getattr(obj, name)
+        if isinstance(value, datetime):
+            local = value.replace(tzinfo=tz)
+            if value.tzinfo is None or value.utcoffset() != local.utcoffset():
+                if value.tzinfo is not None:
+                    logger.warning("Gemini 回傳非本地時區 %s，保留牆上時刻改標 %s", value.isoformat(), tz)
+                setattr(obj, name, local)
+        else:
+            _localize_times(value)
 
 
 # --- Per-user Rate Limiter ---
@@ -145,7 +172,7 @@ def _build_system_prompt(has_history: bool = False) -> str:
 7. reminder_minutes 範例：「提前 15 分鐘提醒」→ 15，「提前 1 小時提醒」→ 60，「半小時前提醒」→ 30。{history_note}
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
-時區：{settings.timezone}"""
+時區：{settings.timezone}（所有時間都用這個時區輸出 ISO 8601、帶 {now.isoformat()[-6:]} 位移，不要換算成 UTC）"""
 
 
 async def parse_intent(
@@ -200,6 +227,7 @@ async def parse_intent(
             clarification_needed="無法解析指令",
         )
 
+    _localize_times(payload)
     return CalendarIntent(**payload.model_dump(), original_message=user_message)
 
 
@@ -260,14 +288,14 @@ async def parse_update_details(
 請根據使用者的指令，只填需要更新的欄位，不變的欄位留 null。
 
 修改規則：
-1. 「改到明天/後天/週五」→ 保持原持續時間，只移動日期，時間不變
+1. 「改到明天/後天/週五」→ 保持原持續時間，只移動日期，時間不變；明天、後天、下週五等相對日期一律從「目前時間」的日期起算，不是從原始行程的日期起算
 2. 「改到下午 N 點 / N:00」→ 開始改為 N:00，結束 = 開始 + 原持續時間
 3. 「延後/提前 N 小時/分鐘」→ 開始和結束各平移相同時間
 4. 「改成 N 小時/分鐘」→ 結束 = 原開始 + N 小時/分鐘（開始不變）
 5. 若只改名稱/地點/描述，時間欄位留 null
 
 目前時間：{now:%Y-%m-%d %H:%M} 星期{weekday_name(now)}
-時區：{settings.timezone}
+時區：{settings.timezone}（所有時間都用這個時區輸出 ISO 8601、帶 {now.isoformat()[-6:]} 位移，不要換算成 UTC）
 
 原始行程：
 {event_info}"""
@@ -288,4 +316,5 @@ async def parse_update_details(
             "parse_update_details 未回傳合法 EventDetails: %s", (response.text or "")[:300]
         )
         return None
+    _localize_times(details)
     return details

@@ -1,3 +1,17 @@
+# 換 gemini-3.5-flash-lite＋相對日期 prompt＋時區防線
+
+## Checklist
+
+- [x] 1. `settings.gemini_model` 預設改 `gemini-3.5-flash-lite`（Cloud Run 沒有 `GEMINI_MODEL` 覆寫）；README 同步
+- [x] 2. parse_update_details prompt：明天／後天等相對日期從「目前時間」起算。原行程 11/05 的對照實測：舊 prompt 6/12（「改到明天」→ 11/06），新 prompt 12/12
+- [x] 3. `nlp._localize_times()`：只校正 Gemini 回傳的物件（parse_intent／parse_update_details），非本地時區保留牆上時刻改標本地、naive 補本地，校正時記 warning（lite 實測 12 次出現 1 次「10:00+00:00」；47 次抽樣從未「正確換算成 UTC」）；兩個 prompt 也明確要求帶本地位移、不要換算 UTC
+- [x] 4. 第一版把校正做成 model validator，Opus 指出會連帶改寫程式內部建立的 model（例如由 Calendar API 的 UTC 時間建立）→ 改成只在 nlp 端校正，model 不動
+- [x] 5. 測試 `tests/test_gemini_timezone.py`（巢狀 payload、兩條 parse 路徑、內部 model 不被改寫）；99 passed
+- [x] 6. Opus review 兩輪（第二輪無阻擋）：prompt 位移改 ISO 格式 `+08:00`；外地時區不支援的取捨寫進 AGENTS.md；校正次數加進 Hermes 每日早報監控
+- [ ] 7. 部署並驗證
+
+## Review
+
 # 回覆變快：「輸入中」動畫＋Gemini 設定評估
 
 webhook 過去兩週 p50 6.3 s、p90 20.5 s；單次 parse_intent 4–13 s。使用者等待時看不到任何回饋。

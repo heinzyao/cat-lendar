@@ -46,7 +46,7 @@ async def test_loading_shown_before_nlp():
 
 async def test_no_loading_for_fixed_commands():
     order: list[str] = []
-    store, line, parse = _patches(order)
+    store, line, _ = _patches(order)
     with (
         patch.object(message, "store", store),
         patch.object(message, "line_messaging", line),
