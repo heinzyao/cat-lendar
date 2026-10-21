@@ -8,7 +8,7 @@
 - [x] 4. 第一版把校正做成 model validator，Opus 指出會連帶改寫程式內部建立的 model（例如由 Calendar API 的 UTC 時間建立）→ 改成只在 nlp 端校正，model 不動
 - [x] 5. 測試 `tests/test_gemini_timezone.py`（巢狀 payload、兩條 parse 路徑、內部 model 不被改寫）；99 passed
 - [x] 6. Opus review 兩輪（第二輪無阻擋）：prompt 位移改 ISO 格式 `+08:00`；外地時區不支援的取捨寫進 AGENTS.md；校正次數加進 Hermes 每日早報監控
-- [ ] 7. 部署並驗證
+- [x] 7. 部署並驗證（revision 00065，image 030ca04）：模擬「說明」200／0.41 s；「今天有什麼行程」200／2.2 s（換模型前 5.3–6.3 s），Gemini 解析 query conf 1.00；/internal/sync 200／0.48 s；無時區校正 log
 
 ## Review
 
