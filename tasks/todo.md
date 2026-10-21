@@ -9,7 +9,7 @@ webhook 過去兩週 p50 6.3 s、p90 20.5 s；單次 parse_intent 4–13 s。使
 - [x] 3. 測試 `tests/test_loading_animation.py`；既有 conversation_memory 測試補 `show_loading` mock；92 passed
 - [x] 4. 真實 Gemini 比較（15 題解析＋3 題時間精算 × 3 輪）：3.8-flash 現行 50/54、p50 6.1 s／p90 9.3 s；3.8-flash thinking=LOW 51/54、3.4／5.4 s（Gemini 端 504 兩次）；3.5-flash-lite 51/54、1.4／1.7 s（錯的都是「改到後天同一時間」把後天算成相對原行程）；thinking=MINIMAL 不支援。**換不換模型待 Henry 決定**，這次只上動畫
 - [x] 5. Opus review（無阻擋問題）；94 passed
-- [ ] 6. 部署並驗證
+- [x] 6. 部署並驗證（revision 00064，image 5b64613）：模擬 webhook 查詢 200、Gemini 解析正常；模擬用的假 user ID 讓 show_loading 收 400 並被接住不擋流程；直接打 LINE API 確認請求格式正確（格式正確的 user ID＋loadingSeconds=25 → 202）
 
 ## Review
 
