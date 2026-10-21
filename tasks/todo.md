@@ -33,7 +33,7 @@
 - [x] 6. 只有關鍵字時搜尋範圍 ±7 天 → 過去 30 天～未來 90 天
 - [x] 7. prompt：targets／match_all 規則、search_keyword 只放名稱詞
 - [x] 8. 測試 82 passed；Opus 第二次 review 已處理（見下）
-- [ ] 9. 真實 Gemini 驗 targets schema 與多目標解析（本機 .env 的 key 已失效、讀 production secret 被擋，未驗）
+- [x] 9. 真實 Gemini 驗 targets schema 與多目標解析（2026-10-21 用 production key 只呼叫 NLP、不碰日曆：多筆取消／多筆修改／「都」match_all／單筆走頂層 keyword 共 6 例全對；parse_update_details「延後 30 分鐘」10:00→10:30 正確。單次 parse_intent 4–13 秒）
 - [x] 10. 部署（2026-10-21 已部署 badd250，模擬 webhook＋結構 log 驗過；之後的提醒修正 37646dd 也已上線）
 
 ## Review
