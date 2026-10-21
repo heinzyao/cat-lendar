@@ -12,7 +12,7 @@
 - [x] 4. 測試：`tests/test_timeouts.py`（逾時值 < deploy.sh 的 `--timeout`、不重試）；86 passed
 - [x] 5. 整個請求的總時限：webhook 所有 event 共用 25 秒（`webhook.HANDLE_DEADLINE_SEC`，逾時回 `i18n.TIMEOUT_ERROR`，請使用者先查詢再重試）；/internal/sync 25 秒（`notify.SYNC_DEADLINE_SEC`）逾時自己回 504 並留 log
 - [x] 6. Opus review 兩輪（第二輪：無阻擋問題）；89 passed
-- [ ] 7. 部署並驗證：/internal/sync 持續 200、模擬 webhook 查詢
+- [x] 7. 部署並驗證（revision 00063，image 273f69b）：/internal/sync 200／0.54 s；模擬 webhook「說明」200、「今天有什麼行程」Gemini 解析＋Calendar 查詢成功（假 reply token 的 400 屬預期）
 
 ## Review
 
