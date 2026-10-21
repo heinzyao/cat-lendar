@@ -10,6 +10,7 @@ uv run python -m pytest tests/ -q        # 測試；asyncio_mode=auto
 GOOGLE_CALENDAR_ID=<共享日曆 ID> ./scripts/deploy.sh   # 部署；此變數必填，未設會直接中止
 ```
 
+- 換 Gemini 模型或改 prompt 前後，用 `scripts/bench_gemini.py --models <現行> <候選>` 比準確度與延遲（真實 Gemini、只呼叫 NLP、不碰日曆）。
 - Cloud Run 服務名仍是 `line-calendar-bot`（`asia-east1`），專案改名前留下的，URL 不變，不要改。
 - Docker image 用 Python 3.12；本地 venv 是 3.14（`line-bot-sdk` 的 Pydantic V1 警告只在本地出現）。
 
